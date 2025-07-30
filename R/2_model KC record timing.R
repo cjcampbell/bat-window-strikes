@@ -19,11 +19,41 @@ dat_surv <- left_join(sd, df_discovery2) %>%
     # presence_noEPFUVespers = as.numeric(count_total_bats_noEPFUVespers>0),
     yday = yday(date),
     year = year(date)
-  )
+  ) %>% 
+  ungroup
 
 library(splines)
 library(glmmTMB)
 library(sjPlot)
+
+# Summarize record timing --------------
+
+dat_surv %>% 
+  dplyr::summarise(
+    count_total_bats = sum(count_total_bats), .by = "yday"
+  ) %>% 
+  dplyr::filter(count_total_bats != 0) %>% 
+  arrange(yday) %>% 
+  mutate(
+    month = yDay_to_Month(yday),
+    season = case_when(yday < 160 ~ "spring", yday >= 160 ~ "autumn")
+  ) %>% 
+  group_by(season) %>% 
+  uncount(count_total_bats) %>% 
+  dplyr::summarise(
+    q02.5 = quantile(yday, probs = c(0.025)),
+    q50.0 = quantile(yday, probs = c(0.5)),
+    q97.5 = quantile(yday, probs = c(0.975))
+  ) %>% 
+  pivot_longer(cols = -season, names_to = "quantile", values_to = "yday") %>% 
+  mutate(
+    monthDay = yDay_to_monthDay(yday)
+  )
+  
+
+
+
+
 
 # Timing models -----------------------------------------------------------
 library(brms)
@@ -111,12 +141,14 @@ p_epred <- conditional_effects(m_abundance_all_ng,  method = "posterior_epred")[
   geom_ribbon(aes(ymin = lower__, ymax = upper__), alpha = 0.2) +
   geom_path(aes(y = estimate__)) +
   geom_point(data = dat_surv, aes(y = count_total_bats), alpha = 0.25) +
-  scale_y_continuous("Count of bats discovered by survey") +
+  scale_y_continuous("Bats discovered by survey") +
   scale_x_continuous(
     "Day of year",
     breaks = monthDayYear_to_yday(monthFirsts),
     labels = format(mdy(monthFirsts), "%b")
   )
+p_epred
+ggsave(p_epred, filename = "figs/timing_posterior.png", dpi = 600, width= 8, height = 8)
 
 conditional_effects(m_abundance_all_ng)
 brms::pp_check(m_abundance_all_ng,ndraws = 100)
@@ -144,10 +176,13 @@ ggplot(pred_out) +
   geom_point(data = dat_surv, aes(y = count_total_bats)) +
   facet_wrap(~year)
 
-plot(conditional_effects(m_abundance_all_poi,  method = "posterior_epred"),
+pp <- plot(conditional_effects(m_abundance_all_poi,  method = "posterior_epred"),
      ask = FALSE,
      points = T,
      offset = T) 
+
+pp[[1]] + 
+  ylab("Bats found")
 
 plot(conditional_effects(m_abundance_all_poi, method = "posterior_predict", prob = 0.95),
      ask = FALSE,
@@ -165,6 +200,11 @@ p_re_year <- MCMCvis::MCMCchains(m_abundance_all_ng) %>%
   stat_halfeye(aes(x = value, y = name), alpha = 0.5) +
   scale_y_discrete("Year of survey") +
   scale_x_continuous("Posterior estimates")
+p_re_year
+
+ggsave(p_re_year, filename = "figs/timing_posterior_year.png", dpi = 600, width = 6, height = 6)
+
+
 
 
 # library(patchwork)

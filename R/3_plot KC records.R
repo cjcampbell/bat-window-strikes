@@ -1,14 +1,24 @@
 
+# Setup ==============
+source("R/0_funs.R")
+library(sf)
+library(geodata)
+library(rinat)
+library(tidyterra)
+library(data.table)
 
 speciesColors <- c(
   "Big brown" = "#A16928",
-  "Evening" = "#124559", 
-  "Vespertilionidae" = "grey50", 
-  "Eastern Red" = "#E46844", 
-  "Tricolored" = "#f4d35e", 
-  "Silver-haired" = "#484357")
+  "Evening" = "#124559",
+  "Vespertilionidae" = "grey50",
+  "Eastern Red" = "#E46844",
+  "Tricolored" = "#f4d35e",
+  "Silver-haired" = "#484357"
+)
 
-df_discovery2 <- df_discovery2 %>% 
+
+# Bar plot of frequencies -------------------------
+df_discovery2 <- read.csv("out/data_derived/structured_surveys_bats_discovered.csv") %>% 
   mutate(
     species = factor(species, levels = c(
       "Evening", "Big brown", "Eastern Red",
@@ -35,59 +45,70 @@ df_discovery2 <- df_discovery2 %>%
     )
   ) 
 
-
-# Quick exploratory plot.
-
-rowWidth <- 10
-p_waffle <- df_discovery2 %>% 
-  dplyr::select(species) %>% 
-  arrange(species) %>% 
-  mutate(
-    pos = row_number(),
-    y = ceiling(pos / rowWidth),
-    x = pos %% rowWidth,
-    x = case_when(x == 0 ~ rowWidth, TRUE ~ x)
-  ) %>% 
+df_discovery2 %>% 
+  count(species) %>% 
+  arrange(desc(n)) %>% 
+  mutate(species = factor(species, levels = unique(.$species))) %>% 
   ggplot() +
-  geom_tile(aes(fill = species, x = x, y=y,), color = "white", size = 2) +
+  geom_col(aes(x= species, y = n, fill = species)) +
+  scale_y_continuous("Number of Kansas City records",
+                     expand = expansion(add = c(0, 3))) +
+  scale_x_discrete("Species")+
   scale_fill_manual(
     "Species",
     values = speciesColors,
     breaks = levels(df_discovery2$species)
-    ) +
-  scale_y_reverse() +
-  theme_minimal() +
-  coord_equal() +
-  theme(
-    strip.text = element_blank(),
-    strip.background = element_blank(),
-    axis.title = element_blank(),
-    axis.text = element_blank(),
-    panel.grid = element_blank(),
-    strip.text.y.left = element_text(angle = 0, hjust = 1)
   ) 
 
-ggsave(p_waffle, filename = "figs/KC_count_waffle.svg", width = 5, height = 3)
+## Change to scientific names --------------
 
-# df_discovery2 %>% 
-#   count(species) %>% 
-#   mutate(cumsum = cumsum(n))
-#   ggplot() +
-#   geom_col(aes(x = 1, y = n, fill = species)) +
-#   scale_fill_manual(
-#     "Species",
-#     values = speciesColors,
-#     breaks = levels(df_discovery2$species)
-#   ) 
+p_KC_records_by_species <- df_discovery2 %>% 
+  mutate(
+    group = case_when(
+      species == "Evening"       ~ "Nycticeius humeralis",
+      species == "Big brown"     ~ "Eptesicus fuscus",
+      species == "Eastern Red"   ~ "Lasiurus borealis",
+      species == "Silver-haired" ~ "Nycticeius humeralis",
+      species == "Tricolored"    ~ "Perimyotis subflavus",
+      TRUE~ "Other/unknown"
+    ),
+    group_lab = case_when(
+      group == "Other/unknown" ~ "Other/unknown",
+      TRUE ~ paste0("<i>", group, "</i>")
+    )
+  ) %>% 
+  count(group, group_lab) %>% 
+  arrange(desc(n)) %>% 
+  mutate(group_lab = factor(group_lab, levels = unique(.$group_lab))) %>% 
+  ggplot() +
+  geom_col(aes(x= group_lab, y = n, fill = group)) +
+  geom_text(aes(x = group_lab, y = n, label = n), vjust = -0.25, color = "grey50", size = 2) +
+  scale_y_continuous("Number of Kansas City records",
+                     expand = expansion(add = c(0, 3))) +
+  scale_x_discrete("Species") +
+  scale_fill_manual(
+    "",
+    values = 
+      c(
+        "Eptesicus fuscus" = "#A16928",
+        "Nycticeius humeralis" = "#124559", 
+        "Other/unknown" = "grey50", 
+        "Lasiurus borealis" = "#E46844", 
+        "Perimyotis subflavus" = "#f4d35e", 
+        "Lasionycteris noctivagans" = "#484357")
+    # breaks = levels(df_discovery2$species)
+  ) +
+  theme(
+    legend.position = "none",
+    axis.title.x.bottom = element_blank(),
+    axis.text.x.bottom = ggtext::element_markdown()
+  )
+ggsave("figs/KC_records_by_species.png", p_KC_records_by_species, dpi = 600)
 
 
 
-df_discovery2 %>% 
-  count(season) %>% 
-  dplyr::mutate(prop = round(n/sum(n)*100), .by = c("season"))
-
-
-# Plot of counts pooled by year.
+# Phenology plots of yday by species/group ==============
+## All together ----------
 datebreaks <- yday(lubridate::mdy(paste(1:12, "-1-2025")))
 datelabs <-  month.abb
 
@@ -118,8 +139,8 @@ p_yday_species <- df_discovery2 %>%
     breaks = levels(df_discovery2$species)
   ) +
   theme(
-    panel.grid.major.y = element_line(color = "grey90"),
-    panel.grid.minor.y = element_line(color = "grey95", linewidth = 0.1),
+    panel.grid.major.y = element_line(color = "grey80"),
+    panel.grid.minor.y = element_line(color = "grey90", linewidth = 0.1),
     strip.background = element_blank(),
     legend.position = "none",
     axis.text.x.bottom = element_text(
@@ -127,9 +148,7 @@ p_yday_species <- df_discovery2 %>%
     )
   )
 
-
-
-
+## Separate for consistent y axes -------------
 
 p_yday_species_list <- lapply(c("Evening", "Big brown", "Eastern Red", "Others"), function(x) {
   dd <- df_discovery2 %>%  
@@ -172,7 +191,7 @@ p_yday_species_list <- lapply(c("Evening", "Big brown", "Eastern Red", "Others")
       breaks = levels(df_discovery2$species)
     ) +
     theme(
-      panel.grid.major.y = element_line(color = "grey90"),
+      panel.grid.major.y = element_line(color = "grey80"),
       panel.grid.minor.y = element_line(color = "grey90", linewidth = 0.1),
       strip.background = element_blank(),
       legend.position = "none",
@@ -187,7 +206,15 @@ p_yday_species2 <- patchwork::wrap_plots(p_yday_species_list, axis_titles = "col
 ggsave(p_yday_species2 + theme(legend.position = "none"), filename = "figs/KC_yday_histogram.svg", width = 6, height = 3)
 
 
-## building direction plots : -----
+# Counts by season ===========
+
+df_discovery2 %>% 
+  count(season) %>% 
+  dplyr::mutate(prop = round(n/sum(n)*100), .by = c("season"))
+
+
+
+# Cardinal direction of discovery plots/summaries -----
 
 df_discovery2 %>% 
   dplyr::filter(!is.na(Building_side)) %>% 
@@ -222,16 +249,3 @@ df_discovery2 %>%
   count(season, Building_side_general) %>% 
   dplyr::mutate(prop = round(n/sum(n)*100), .by = c("season"))
 
-
-
-
-
-# # Load iNat records -----------
-# 
-# focalObs <- get_inat_obs_user("redtail5")
-# 
-# mySearch.DeAnnObs <- searchBuilder(user_id="redtail5", taxon_id = 40268)
-# howManyResults(mySearch.DeAnnObs)
-# 
-# 
-# mydownloadedObs2 <- downloadResults(mysearch2)
