@@ -60,7 +60,7 @@ df_otherLicenses <-  df_with_info %>%
   dplyr::filter(license != "") 
 
 df_tidy_licenses <- full_join(df_otherLicenses, df_restrictiveLicenses)
-write.csv(df_tidy_licenses, "out/data_derived/iNaturalist records.csv", row.names = F)
+write.csv(df_tidy_licenses, "data/derivediNaturalist records.csv", row.names = F)
 
 
 ## Correct  spatial data -----
