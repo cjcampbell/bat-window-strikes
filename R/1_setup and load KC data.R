@@ -2,8 +2,8 @@
 source("R/0_funs.R")
 library(readxl)
 
-# This script tidies records kept during structured surveys.
-# Skip ahead to the next script to start with tidy, replicable csv files.
+# This script tidies records kept during semi-structured surveys.
+# Skip ahead to the next script to start with tidy, ready-to-run csv files.
 
 # Load discovery data -----------------------------------------------------
 
@@ -90,10 +90,13 @@ df_discovery2 <- df_discovery %>%
     locality, Status, `Description Where Found`, 
     Notes, Building_side, 
     paired
+  ) %>% 
+  dplyr::filter(
+    # We also note, but omit from subsequent analyses, two records of big brown bats in January and February that were reported by community members for rescue.
+    !id %in% c(106, 41) 
   )
 
 write.csv(df_discovery2, "out/data_derived/structured_surveys_bats_discovered.csv", row.names = F)
-
 
 
 # Load survey data data ---------------------------------------------------
@@ -107,6 +110,11 @@ sd <- read_excel("data/Survey dates.xlsx", sheet = "Sheet1_tidy") %>%
     date = mdy(paste(calDate, year))
     ) %>% 
   dplyr::select(-calDate, -year)
+
+# There were some dates missing from the survey dates spreadsheet. Infer them 
+# using observation data.
+sd <- rbind(sd, data.frame(survey = TRUE, date = (unique(df_discovery2$date))[!(unique(df_discovery2$date) %in% sd$date)])) %>%
+  arrange(date)
 
 fullDates <- data.frame(date = seq.Date(ymd("2019-09-01"), ymd("2024-12-31"), by = "1 days" ))
 sd <- full_join(sd, fullDates) %>% 

@@ -1,12 +1,16 @@
 
 source("R/0_funs.R")
+library(patchwork)
 
-df_discovery2 <- read.csv("out/data_derived/structured_surveys_bats_discovered.csv")
-sd <- read.csv("out/data_derived/structured_surveys_schedule.csv")
+df_discovery2 <- read.csv("out/data_derived/structured_surveys_bats_discovered.csv") %>% 
+  mutate(date = as_date(date))
+sd <- read.csv("out/data_derived/structured_surveys_schedule.csv") %>% 
+  mutate(date = as_date(date))
 
 # Find counts / survey date
-dat_surv <- left_join(sd, df_discovery2) %>% 
-  dplyr::filter(survey == TRUE) %>% 
+df_discovery3 <- left_join(sd, df_discovery2) %>% 
+  dplyr::filter(survey == TRUE) 
+dat_surv <- df_discovery3 %>% 
   count(date, species) %>% 
   pivot_wider(names_from = species, values_from = n, names_prefix = "count_") %>% 
   dplyr::select(-`count_NA`) %>% 
@@ -15,8 +19,6 @@ dat_surv <- left_join(sd, df_discovery2) %>%
   mutate(
     count_total_bats = rowSums(across(starts_with("count_"))),
     presence_any_bats = as.numeric(count_total_bats>0),
-    # count_total_bats_noEPFUVespers = rowSums(across(c("count_Evening", "count_Eastern Red", "count_Tricolored", "count_Silver-haired"))),
-    # presence_noEPFUVespers = as.numeric(count_total_bats_noEPFUVespers>0),
     yday = yday(date),
     year = year(date)
   ) %>% 
@@ -49,9 +51,6 @@ dat_surv %>%
   mutate(
     monthDay = yDay_to_monthDay(yday)
   )
-  
-
-
 
 
 
@@ -79,7 +78,7 @@ bayes_R2(m_presence_all_bernoulli)
 
 
 ## Abundance model (all species) -------
-
+### poisson -----
 m_abundance_all_poi <- brm(
   bf( count_total_bats ~ ns(yday, 5)  + (1|year) ),
   data = dat_surv,
@@ -103,25 +102,27 @@ conditional_effects(m_abundance_all_poi)
 brms::pp_check(m_abundance_all_poi,ndraws = 100)
 bayes_R2(m_abundance_all_poi)
 
+### Neg binom ----
 m_abundance_all_ng <- brm(
   bf( count_total_bats ~ ns(yday, 5)  + (1|year) ),
   data = dat_surv,
   family = negbinomial(),
-  adapt_delta = 0.99,
+  adapt_delta = 0.95,
   save_pars = save_pars(all = TRUE),
   cores = 4,
   chains = 4,
-  seed = 42,
+  seed = 40,
   iter = 5000,
   warmup = 1000,
   threads = threading(4),
   backend = "cmdstanr",
-  file_refit = "on_change",
+  # file_refit = "always",
   file = "out/models/m_abundance_all_ng.rds"
 )
 m_abundance_all_ng <- add_criterion(
   m_abundance_all_ng, c("loo"), moment_match = TRUE, recompile = TRUE)
 
+### Compare ----
 loo_compare(m_abundance_all_poi, m_abundance_all_ng)
 
 plot(conditional_effects(m_abundance_all_ng, method = "posterior_predict", prob = 0.90),
@@ -206,65 +207,37 @@ ggsave(p_re_year, filename = "figs/timing_posterior_year.png", dpi = 600, width 
 
 
 
+# Make combination Plot ------------
 
-# library(patchwork)
-# 
-# {p_waffle | guide_area() |
-#   {p_yday_species + theme(legend.position = "none")}} /
-#   (p_epred | p_re_year) +
-#   patchwork::plot_annotation(tag_levels = 'A') 
-# 
+# Load plots from script 2.
+p_KC_records_by_species <- readRDS("tmp/p_KC_records_by_species.rds")
 
+# Make new plots.
+p_KC_records_barplot <- readRDS("tmp/p_KC_records_barplot.rds")
 
-# Add species to the model?
+f3_combo22 <- 
+    p_yday_species_list[[1]] +
+    {p_yday_species_list[[2]]} +
+    p_yday_species_list[[3]] +
+    p_yday_species_list[[4]] +
+    free(p_KC_records_barplot) +
+    free(p_epred) + free(p_re_year) +
+    plot_layout(
+      design = "
+    112233
+    445555
+    666777
+    ",
+      axis_titles = "collect_y",
+      heights = c(1,1,1.5),
+      widths = c(1,1,1)
+    ) +
+  plot_annotation(
+    tag_levels = 'a', tag_prefix = "(", tag_suffix = ")") & 
+  theme(
+    plot.tag.position  = c(0.1,0.95),
+    plot.tag = element_text(size = 10)
+    )
 
-
-# dat_long <- dat_surv %>% 
-#   dplyr::select(-c(count_total_bats, presence_any_bats)) %>% 
-#   pivot_longer(
-#     cols = c("count_Big brown", "count_Evening", "count_Vespertilionidae", 
-#              "count_Eastern Red", "count_Tricolored", "count_Silver-haired"),
-#     names_prefix = "count_",
-#     names_to = "species",
-#     values_to = "count"
-#   )
-
-
-
-## Add other predictors to model? ------
-
-# moon_phase <- suncalc::getMoonIllumination(dat_surv$date, keep =c("fraction", "phase")) %>% 
-#   rename(moon_phase = fraction)
-# # moontimes0 <- suncalc::getMoonTimes(
-# #   dat_surv$date, 
-# #   lat = 39.10,
-# #   lon = -94.58,
-# #   keep = c("rise", "set"),
-# #   tz = "America/Chicago"
-# # )
-# 
-# dat_surv2 <- full_join(dat_surv, moon_phase)
-# 
-# m_abundance_all_poi2 <- update(
-#   m_abundance_all_poi,
-#   bf( count_total_bats ~ ns(yday, 5)  + (1|year) + ns(moon_phase, 2)),
-#   newdata = dat_surv2
-#   )
-# plot(conditional_effects(m_abundance_all_poi2, method = "posterior_predict", prob = 0.95),
-#      ask = FALSE,
-#      points = T,
-#      offset = T)
-
-# Other Plots -------------------------------------------------------------------
-
-# Figure -------------
-# Lots of bats found close together and on the same day
-# Look at the temporal clustering
-
-
-# Make a map
-
-
-# Lakeside nature center ------
-
-# "updated 3-19"
+ggsave(f3_combo22, filename = "figs/f3_combo2.png", width = 8, height = 7, dpi = 600)
+ggsave(f3_combo22, filename = "figs/f3_combo2.svg", width = 8, height = 7)
