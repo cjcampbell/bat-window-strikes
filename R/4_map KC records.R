@@ -24,7 +24,7 @@ if(!file.exists("tmp/downloads.DeAnnObs.csv")) {
 # 39.110600348029564&nelng=-94.49173146991824&page=2&swlat=39.07396161025084&swlng=-94.65489560871218
 
 # Retain only those points observed on surveyed dates.
-sd <- read.csv("out/data_derived/structured_surveys_schedule.csv") %>% 
+sd <- read.csv("data/derived/structured_surveys_schedule.csv") %>% 
   dplyr::filter(survey == TRUE) %>% 
   dplyr::select(date) %>% 
   mutate(date = date(date))

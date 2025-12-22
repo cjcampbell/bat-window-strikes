@@ -2,9 +2,9 @@
 source("R/0_funs.R")
 library(patchwork)
 
-df_discovery2 <- read.csv("out/data_derived/structured_surveys_bats_discovered.csv") %>% 
+df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv") %>% 
   mutate(date = as_date(date))
-sd <- read.csv("out/data_derived/structured_surveys_schedule.csv") %>% 
+sd <- read.csv("data/derived/structured_surveys_schedule.csv") %>% 
   mutate(date = as_date(date))
 
 # Find counts / survey date

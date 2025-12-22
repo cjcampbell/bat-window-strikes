@@ -21,7 +21,7 @@ names(speciesColors2) <- c( "Eptesicus fuscus", "Nycticeius humeralis", "Other/u
 
 
 # Bar plot of frequencies -------------------------
-df_discovery2 <- read.csv("out/data_derived/structured_surveys_bats_discovered.csv") %>% 
+df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv") %>% 
   mutate(
     species = factor(species, levels = c(
       "Evening", "Big brown", "Eastern Red",
@@ -275,9 +275,9 @@ df_discovery2 %>%
 
 # Summaries ================================
 
-df_discovery <- read.csv("out/data_derived/structured_surveys_bats_discovered.csv") %>% 
+df_discovery <- read.csv("data/derived/structured_surveys_bats_discovered.csv") %>% 
   mutate(date = as_date(date))
-sd <- read.csv("out/data_derived/structured_surveys_schedule.csv") %>% 
+sd <- read.csv("data/derived/structured_surveys_schedule.csv") %>% 
   mutate(date = as_date(date))
 
 

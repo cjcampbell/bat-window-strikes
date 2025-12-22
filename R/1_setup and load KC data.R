@@ -96,7 +96,7 @@ df_discovery2 <- df_discovery %>%
     !id %in% c(106, 41) 
   )
 
-write.csv(df_discovery2, "out/data_derived/structured_surveys_bats_discovered.csv", row.names = F)
+write.csv(df_discovery2, "data/derived/structured_surveys_bats_discovered.csv", row.names = F)
 
 
 # Load survey data data ---------------------------------------------------
@@ -125,7 +125,7 @@ sd <- full_join(sd, fullDates) %>%
     yday_bin7 = cut(yday, breaks = seq(1,365,by=7))
     ) 
 
-write.csv(sd, "out/data_derived/structured_surveys_schedule.csv", row.names = F)
+write.csv(sd, "data/derived/structured_surveys_schedule.csv", row.names = F)
 
 sd_yday_count <- sd %>% 
   group_by(yday_bin7) %>% 
