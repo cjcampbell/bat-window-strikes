@@ -9,8 +9,6 @@ library(patchwork)
 library(data.table)
 
 source("R/0_funs.R")
-# source("R/1_setup and load KC data.R")
-# source("R/2_plot KC records.R")
 
 myproj <- "+proj=eqearth +lon_0=0 +datum=WGS84 +units=km +no_defs"
 proj.wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +type=crs"
@@ -276,22 +274,6 @@ df_NoAm <- dplyr::filter(df_grid, continent == "North America")
 datebreaks <- yday(lubridate::mdy(paste(1:12, "-1-2025")))
 datelabs <-  month.abb
 
-# df_NoAm %>% 
-#   dplyr::filter(
-#     quality_grade == "research") %>% 
-#   ggplot() +
-#   geom_histogram(aes(x = yday, fill = scientific_name)) +
-#   scale_fill_manual(
-#     "Species",
-#     values = speciesColors2
-#   ) +
-#   scale_x_continuous(
-#     "Day of year",
-#     breaks = datebreaks,
-#     labels = datelabs
-#   ) +
-#   facet_wrap(~scientific_name, axes = "all_x") +
-#   theme_classic()
 
 ### Plot panels within a list ----
 
@@ -380,68 +362,6 @@ iNaturalist_NoAm_timing2 <- patchwork::wrap_plots(iNaturalist_NoAm_timing_list, 
 iNaturalist_NoAm_timing2
 
 
-#### Plot without colors -----
-# 
-# 
-# iNaturalist_NoAm_timing_list_noCols <- lapply(c(
-#   "Lasiurus borealis",
-#   "Lasionycteris noctivagans",
-#   "Eptesicus fuscus",
-#   "Other/unknown" ), function(x) {
-#     
-#     if(x %in% c("Eptesicus fuscus", "Other/unknown")) {
-#       ymax <- 5
-#     } else {
-#       ymax <- 15
-#     }
-#     
-#     focalCount <- dddd %>% 
-#       count(group) %>% 
-#       dplyr::filter(group == x)
-#     
-#     dddd2 <- dddd %>%
-#       dplyr::mutate(
-#         group_lab = case_when(group_lab == "Other/unknown" ~ "Other", TRUE ~ group_lab),
-#         group_lab = paste("<b>", group_lab, "</b><br>", "<i>n</i>=", focalCount$n)
-#       )
-#     
-#     dddd2 %>% 
-#       dplyr::filter(group == x) %>% 
-#       mutate(species_rg = factor(species_rg)) %>% 
-#       ggplot() +
-#       geom_histogram(aes(x = yday), binwidth = 14, fill = "#337CA0") +
-#       scale_x_continuous(
-#         "Day of year",
-#         limits = c(1, 365),
-#         breaks = datebreaks,
-#         labels = datelabs,
-#         expand = c(0,0)
-#       ) +
-#       facet_wrap(~group_lab, axes = "all_x", scales = "free_y") +
-#       theme_classic() +
-#       scale_y_continuous(
-#         "Number of North American iNaturalist records",
-#         expand = c(0,0),
-#         breaks = seq(0,50, by = 5),
-#         minor_breaks = seq(0,50, by = 1),
-#         limits = c(0, ymax)
-#       ) +
-#       theme(
-#         strip.text = ggtext::element_markdown(),
-#         panel.grid.major.y = element_line(color = "grey80"), linewidth = 0.3,
-#         panel.grid.minor.y = element_line(color = "grey90", linewidth = 0.15),
-#         legend.position = "none",
-#         strip.background = element_blank()
-#       )
-#   })
-# 
-# iNaturalist_NoAm_timing_list_noCols3 <- patchwork::wrap_plots(iNaturalist_NoAm_timing_list_noCols, axis_titles = "collect")
-# 
-# iNaturalist_NoAm_timing_list_noCols3
-# # ggsave("figs/iNaturalist_timing.png",iNaturalist_NoAm_timing_list_noCols3, dpi = 600, width = 8)
-# 
-# 
-
 ## Summarize taxonomy ----------
 
 df_NoAm_working <- df_NoAm %>%
@@ -491,10 +411,6 @@ iNaturalist_record_by_spp <- ddd %>%
     breaks = seq(0, 100, by = 20),
     limits = c(0, 100)
   ) +
-  # scale_fill_manual(
-  #   "Species",
-  #   values = speciesColors2
-  # )  +
   theme(
     legend.position = "none",
     axis.text.x = ggtext::element_markdown(angle = 55, hjust = 1),
@@ -607,7 +523,7 @@ df_time %>%
       "Continent",
       values = rev(c("#001219", "#0a9396", "#94d2bd", "#ABB86D", "#ee9b00",  "#9b2226"))
     ) +
-  scale_y_continuous("Count of records", expand = expansion(mult=c(0,NA))) +
+  scale_y_continuous("Number of records", expand = expansion(mult=c(0,NA))) +
     scale_x_continuous("Hour of observation")
 )
 
@@ -628,192 +544,8 @@ F4_combo <- iNat_map_grid_circle + p_timeOfDay +
     plot.tag = element_text(size = 10)
   )
 
-ggsave(F4_combo, filename =  "figs/F4_combo.png", dpi = 600, width = 6.5, height = 5)
-ggsave(F4_combo, filename =  "figs/F4_combo.svg", width = 6.5, height = 5)
-
-
-# Building height analyses ----------------------------------------------------
-
-# Load building height data (big!).
-bh <- rast("data/building height data/GBH2020_150m_GEDI.tif")
-
-# Conduct analyses in native moll projection
-
-# Download GADM data.
-NoAm <- lapply(c("USA", "CAN", "MEX"), function(x) {
-  geodata::gadm(x, level = 1,
-      path = "../../- Missions & Programs/Research & Development/Data Products"
-    ) 
-}) %>% 
-  vect %>% 
-  project(terra::crs(bh))
-
-# Interpolate 0's and then mask by expected land area.
-if(!file.exists("tmp/fp_mask_bh.tif")) {
-  crop(bh, NoAm, filename = "tmp/bh_NoAm0.tif")
-  bh_NoAm0 <- rast("tmp/bh_NoAm0.tif")
-  fp_crop_bh_NA <- subst(bh_NoAm0, NA, 0)
-  fp_mask_bh <- mask(fp_crop_bh_NA, NoAm, filename = "tmp/fp_mask_bh.tif")
-} else {
-  fp_mask_bh <- raster("tmp/fp_mask_bh.tif")
-}
-
-if(!file.exists("tmp/built_proj.tif")) {
-  geodata::landcover(var = "built") %>% 
-    project(crs(bh), filename = "tmp/built_proj.tif")
-} else {
-  built_proj <- rast("tmp/built_proj.tif")
-}
-
-
-
-# Select example location and visualize.
-collisionPoint <- df_NoAm_precise[df_NoAm_precise$id == 12539414,] 
-collisionPoint_buff <- st_buffer(collisionPoint, dist = 1e3)
-myOutline <- st_buffer(collisionPoint, dist = 3e3)
-
-bh_cropped2Example <- crop(bh_NoAm0, myOutline)
-bh_cropped2Example2 <- crop(fp_mask_bh, myOutline)
-built_proj_resampled <- terra::resample(built_proj, bh_cropped2Example, method = "max") %>% 
-  mask(., bh_cropped2Example)
-# built_proj_cropped2Example <- crop(built_proj, collisionPoint_buff)
-
-# ggplot() + 
-#   geom_spatraster(built_proj_resampled, mapping = aes(), maxcell = 50e5) +
-#   geom_spatvector(collisionPoint, mapping = aes(), color = "red") +
-#   geom_spatvector(collisionPoint_buff, mapping = aes(), color = "red", fill = NA)
-
-# ggplot() + 
-#   geom_spatraster(bh_cropped2Example, mapping = aes(), maxcell = 50e5) +
-#   geom_spatvector(collisionPoint, mapping = aes(), color = "red") +
-#   geom_spatvector(collisionPoint_buff, mapping = aes(), color = "red", fill = NA)
-
-ggplot() + 
-  geom_spatraster(bh_cropped2Example2, mapping = aes(), maxcell = 50e5) +
-  geom_spatvector(collisionPoint, mapping = aes(), color = "red") +
-  geom_spatvector(collisionPoint_buff, mapping = aes(), color = "red", fill = NA)
-
-
-# Were bats sampled at locations with greater building heights than
-# the areas around them?
-
-
-
-
-
-
-
-
-
-# # Crop to NoAm
-# if(!file.exists("tmp/bh_NoAm.tif")) {
-#   bh_NoAm <- NoAm %>% 
-#     st_transform(st_crs(bh)) %>% 
-#     st_bbox() %>% 
-#     st_as_sfc() %>% 
-#     terra::crop(bh, .) %>% 
-#     project(proj.aea)
-#   writeRaster(bh_NoAm, file = "tmp/bh_NoAm.tif")
-# }
-# bh_NoAm <- rast("tmp/bh_NoAm.tif")
-# 
-
-## Plot building height across USA -----
-# p_bh_usa <- ggplot() +
-#   geom_spatraster(bh_NoAm, mapping = aes(), maxcell = 100e5) +
-#   scale_fill_viridis_c(option = "turbo", na.value = "white") +
-#   geom_sf(NoAm, mapping = aes(), fill = NA) +
-#   geom_sf(usa, mapping = aes(), fill = NA) +
-#   coord_sf(
-#     xlim = c(-2236891, 2127179),
-#     ylim = c(-1694616, 1328895),
-#     crs = proj.aea
-#   )
-# ggsave("figs/p_bh_usa.png", p_bh_usa, dpi = 600, width = 12, height = 12)
-
-
-df_NoAm_precise <- dplyr::filter(df, continent == "North America", geoprivacy != "obscured") %>% 
-  st_transform(proj.aea)
-ggplot() +
-  geom_spatraster(bh_NoAm, mapping = aes()) +
-  geom_sf(df_NoAm_precise, mapping = aes(), color = "red", shape = 21) +
-  geom_sf(NoAm, mapping = aes(), fill = NA)
-
-df_NoAm_precise_bh <- terra::extract(bh_NoAm, df_NoAm_precise)
-ggplot() +
-  geom_density(data = df_NoAm_precise_bh, aes(x = GBH2020_150m_GEDI))
-
-
-sampleBoundary <- df_NoAm_precise %>% 
-  st_buffer(dist = 5e3) %>% 
-  st_union() %>% 
-  st_transform(proj.aea) %>% 
-  as_spatvector()
-
-ggplot() +
-  geom_sf(df_NoAm_precise, mapping = aes(), color = "red") +
-  geom_spatvector(sampleBoundary, mapping = aes(), fill = NA)
-
-
-masked_bh_NoAm <- mask(bh_NoAm, sampleBoundary)
-ggplot() +
-  geom_spatraster(masked_bh_NoAm, mapping = aes()) +
-  geom_sf(df_NoAm_precise, mapping = aes(), color = "red", shape = 21) +
-  geom_sf(NoAm, mapping = aes(), fill = NA)
-
-
-
-
-
-
-
-
-ranSample <- spatSample(x = masked_bh_NoAm, size = 10000)
-ranSample$GBH2020_150m_GEDI[is.na(ranSample$GBH2020_150m_GEDI)] <- 2
-ggplot() +
-  geom_density(data = df_NoAm_precise_bh, aes(x = GBH2020_150m_GEDI)) +
-  geom_density(data = ranSample, aes(x = GBH2020_150m_GEDI))
-
-
-# Sample points randomly from within 5km of each collision.
-fp <- df_NoAm_precise %>% 
-  st_union %>% 
-  st_transform(st_crs(bh))
-fp_buffer <- st_buffer(fp, dist = 5e3)
-fp_buffer_vect <- as_spatvector(fp_buffer)
-fp_crop_bh <- crop(bh, ext(fp_buffer_vect))
-fp_crop_bh_NA <- subst(fp_crop_bh, NA, 3)
-fp_mask_bh <- mask(fp_crop_bh_NA, fp_buffer_vect)
-
-# Extract building height at site of collision, and randomly from within 5km buffer.
-sample_at_pts <- terra::extract(fp_mask_bh, df_NoAm_precise)
-sample_random <- terra::spatSample(fp_mask_bh, size = 10000, replace = F, na.rm = T)
-
-
-ggplot() +
-  geom_density(sample_at_pts, mapping = aes(x = GBH2020_150m_GEDI)) +
-  geom_density(sample_random, mapping = aes(x = GBH2020_150m_GEDI), color = "blue")
-
-
-data.frame(
-  sample = "at points", sample_at_pts
-) %>% 
-  full_join(
-    data.frame(
-      sample = "near points", sample_random
-    ) 
-  ) %>% 
-  ggplot() +
-  aes(x= sample, y = GBH2020_150m_GEDI) +
-  geom_violin() +
-  geom_boxplot(fill = NA) +
-  scale_x_discrete(
-    "Location",
-    labels = c("At site of collision\n(n=207)", "Near site of collision\n(n=XX)")
-  ) +
-  scale_y_continuous(
-    "Building height (m)"
-  )
+ggsave(F4_combo, filename =  "figs/F4_combo.png", dpi = 600, width = 8, height = 7)
+ggsave(F4_combo, filename =  "figs/F4_combo.svg", width = 8, height = 7)
 
 
 

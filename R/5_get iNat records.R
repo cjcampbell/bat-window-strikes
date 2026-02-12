@@ -23,6 +23,7 @@ for(i in 1:nrow(all)) {
   
   df <- rinat::get_inat_obs_id(all$id[i])
   Sys.sleep(1)
+  # Paste in large empty dataframe to start.
   df2 <- data.frame(
     id = df$id,
     observed_on = if(is.null(df$observed_on)) NA else df$observed_on,

@@ -133,6 +133,7 @@ pols <- lapply(ids, function(x){
 final_pols <- do.call(rbind, pols)
 st_crs(final_pols) <- st_crs(proj.wgs84)
 
+# Quick plot.
 ggplot() + 
   geom_sf(final_pols, mapping = aes(fill=nlevel), color = NA)
 
@@ -231,13 +232,16 @@ ggsave(p_big, filename = "figs/map_country.svg", width = 1.69*2,  height = 1.11*
 
 ### Make regional map -----
 
+# Below code uses an object, largeFileStoragePath, that must be set to the location
+# of a directory containing NLCD data in a directory "nlcd".
+# It will also download GADM data there in a folder `geodata` will create ("gadm").
 
-# Load land cover dataset
-nlcd0 <- rast("../../- Missions & Programs/Research & Development/Data Products/land cover/nlcd/nlcd_2021_land_cover_l48_20230630/nlcd_2021_land_cover_l48_20230630.img")
+# Load land cover dataset from NLCD.
+nlcd0 <- rast(file.path(largeFileStoragePath, "nlcd/nlcd_2021_land_cover_l48_20230630/nlcd_2021_land_cover_l48_20230630.img"))
 nlcd_crop_medium <- crop(nlcd0, project(terra::vect(myBox_medium),crs(nlcd0)))
 myBox_medium_acea <- st_transform(myBox_medium, st_crs(nlcd_crop_medium))
 
-geodata::geodata_path("../../- Missions & Programs/Research & Development/Data Products/")
+geodata::geodata_path(largeFileStoragePath)
 usa_48 <- geodata::gadm(country = "USA", path = "../../- Missions & Programs/Research & Development/Data Products/") %>% 
   st_as_sf() %>% 
   dplyr::filter(!NAME_1 %in% c("Alaska", "Hawaii", "Puerto Rico")) %>% 

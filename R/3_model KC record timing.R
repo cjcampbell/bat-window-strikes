@@ -1,6 +1,9 @@
 
 source("R/0_funs.R")
 library(patchwork)
+library(splines)
+library(glmmTMB)
+library(sjPlot)
 
 df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv") %>% 
   mutate(date = as_date(date))
@@ -23,10 +26,6 @@ dat_surv <- df_discovery3 %>%
     year = year(date)
   ) %>% 
   ungroup
-
-library(splines)
-library(glmmTMB)
-library(sjPlot)
 
 # Summarize record timing --------------
 
@@ -69,7 +68,7 @@ m_presence_all_bernoulli <- brm(
   warmup = 500,
   threads = threading(4),
   backend = "cmdstanr",
-  file_refit = "on_change",
+  # file_refit = "on_change",
   file = "out/models/m_presence_all_bernoulli.rds"
 )
 conditional_effects(m_presence_all_bernoulli)
@@ -92,7 +91,7 @@ m_abundance_all_poi <- brm(
   warmup = 1000,
   threads = threading(4),
   backend = "cmdstanr",
-  file_refit = "on_change",
+  # file_refit = "always",
   file = "out/models/m_abundance_all_poi.rds"
 )
 m_abundance_all_poi <- add_criterion(
@@ -209,11 +208,9 @@ ggsave(p_re_year, filename = "figs/timing_posterior_year.png", dpi = 600, width 
 
 # Make combination Plot ------------
 
-# Load plots from script 2.
-p_KC_records_by_species <- readRDS("tmp/p_KC_records_by_species.rds")
-
-# Make new plots.
+# Load plots from script 2 for inclusion in multi-panel figure w/ model results.
 p_KC_records_barplot <- readRDS("tmp/p_KC_records_barplot.rds")
+p_yday_species_list <- readRDS("tmp/p_yday_species_list.rds")
 
 f3_combo22 <- 
     p_yday_species_list[[1]] +
@@ -232,8 +229,8 @@ f3_combo22 <-
       heights = c(1,1,1.5),
       widths = c(1,1,1)
     ) +
-  plot_annotation(
-    tag_levels = 'a', tag_prefix = "(", tag_suffix = ")") & 
+  # plot_annotation(
+  #   tag_levels = 'a', tag_prefix = "(", tag_suffix = ")") & 
   theme(
     plot.tag.position  = c(0.1,0.95),
     plot.tag = element_text(size = 10)
