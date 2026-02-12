@@ -25,9 +25,15 @@ Tidied data created or synthesized in the course of this study
 | -----------                            | ----------- |
 `structured_surveys_schedule.csv` | Dates of semi-structured surveys in KC. Contains columns: <br> `survey` = Was survey conducted on specified date? (boolean) <br> `date` = Date of survey in yyyy-mm-dd format.<br> `yday` = Day of year of survey (1-365).<br>`yday_bin7` = Day of year of survey, divided into 7-day bins. |
 `structured_surveys_bats_discovered.csv`|Discovery of bats in KC. Contains columns: <br> `id` = ID of bat discovered (numeric)<br> `date` = Date of discovery in yyyy-mm-dd format.<br> `yday` = Day of year of discovery (1-365).<br> `species` = Species of discovered bat (common name)<br> `plotGroup` = Species group of discovered bat (most common species + Other category)<br> `locality` = Notes on locality of discovery<br> `Status` = Notes on status (typically alive vs. dead)<br> `Description Where Found` = Notes on specific conditions of discovery (e.g., on sidewalk)<br> `Notes` = Additional notes<br> `Building_side` = Cardinal direction of discovery relative to nearest building<br> `paired` = Was another bat found in immediate viscinity (Y/N).|
-`iNaturalist records.csv`|
+`iNaturalist records.csv`| Retained iNaturalist records from data synthesis. We do not publish non-derived data from observations associated with restrictive licenses (e.g., "All rights reserved"). Contains columns: <br> `id` = iNaturalist ID number of observation<br> `url` = URL of observation <br> `notes` = Notes derived from manual checks of all observations. <br> `scientific_name` = Scientific name of organism from observation. <br> `common_name` = Common name of organism from observation<br> `description` = Text description provided by observer of observation. <br>  `user_login` = Username of user who made observation <br> `observed_on` = Datetime of observation <br> `license` = License of observation (at time of download)<br> `family_name` = Scientific name of family <br> `adm0_a3` = Three-letter country code where record was made <br>  `continent` = Continent of record |
 
-Retained iNaturalist records from data synthesis. We do not publish non-derived data from observations associated with restrictive licenses (e.g., "All rights reserved"). Contains columns: <br> `id` = iNaturalist ID number of observation<br> `url` = URL of observation <br> `notes` = Notes derived from manual checks of all observations. <br> `scientific_name` = Scientific name of organism from observation. <br> `common_name` = Common name of organism from observation<br> `description` = Text description provided by observer of observation. <br>  `user_login` = Username of user who made observation <br> `observed_on` = Datetime of observation <br> `license` = License of observation (at time of download)<br> `family_name` = Scientific name of family <br> `adm0_a3` = Three-letter country code where record was made <br>  `continent` = Continent of record |
+## out/
+
+Core outputs of analyses. Contains the following directories:
+| Directory                                   | Description |
+| -----------                            | ----------- |
+| `figs/` | Figures used in manuscript and SI. |
+| `models/` | Model files generated in `3_model KC record timing.R`. Format is .rds. |
 
 
 ## Session info
