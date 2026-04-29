@@ -291,12 +291,12 @@ df <- df0 %>%
     place_country_name = max(place_country_name,na.rm = T),
     `alive?` = max(`alive?`,na.rm = T),
     `Dead?` = max(`Dead?`,na.rm = T),
-    `DeAnn's notes  No bats found on KCMO surveys` = max(`DeAnn's notes  No bats found on KCMO surveys`,na.rm = T),
-    `CJ's notes` = max(`CJ's notes`,na.rm = T),
+    `screener_1_notes` = max(screener_1_notes,na.rm = T),
+    `screener_2_notes` = max(`screener_2_notes`,na.rm = T),
   ) %>% 
   dplyr::filter(
     !is.na(id),
-    # Remove DeAnn's observations:
+    # Remove a user's observations:
    #  user_login != "redtail5"
     ) %>% 
   arrange(id)

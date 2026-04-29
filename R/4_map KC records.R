@@ -10,15 +10,15 @@ library(data.table)
 
 # Map locations --------------
 ## Load iNat records -----------
-if(!file.exists("tmp/downloads.DeAnnObs.csv")) {
+if(!file.exists("tmp/downloads.redtail5.csv")) {
   focalObs <- get_inat_obs_user("redtail5")
   
-  mySearch.DeAnnObs <- searchBuilder(user_id="redtail5", taxon_id = 40268)
-  howManyResults(mySearch.DeAnnObs)
+  mySearch.redtail5 <- searchBuilder(user_id="redtail5", taxon_id = 40268)
+  howManyResults(mySearch.redtail5)
   
-  downloads.DeAnnObs <- downloadResults(mySearch.DeAnnObs)
+  downloads.redtail5 <- downloadResults(mySearch.redtail5)
   
-  fwrite(downloads.DeAnnObs, file="tmp/downloads.DeAnnObs.csv", row.names = F)
+  fwrite(downloads.redtail5, file="tmp/downloads.redtail5.csv", row.names = F)
 }
 
 # 39.110600348029564&nelng=-94.49173146991824&page=2&swlat=39.07396161025084&swlng=-94.65489560871218
@@ -30,7 +30,7 @@ sd <- read.csv("data/derived/structured_surveys_schedule.csv") %>%
   mutate(date = date(date))
 
 
-df <- read.csv("tmp/downloads.DeAnnObs.csv") %>% 
+df <- read.csv("tmp/downloads.redtail5.csv") %>% 
   dplyr::filter(
     latitude <= 39.110600348029564, latitude >= 39.07396161025084,
     longitude <= -94.56, longitude >= -94.6
@@ -40,7 +40,6 @@ df <- read.csv("tmp/downloads.DeAnnObs.csv") %>%
     date = date(datetime)
   ) %>% 
   inner_join(sd)
-
 
 df %>% 
   ggplot() +
