@@ -91,11 +91,12 @@ df_discovery2 <- df_discovery %>%
     locality, Status, `Description Where Found`, 
     Notes, Building_side, 
     paired
-  )# %>% 
-  # dplyr::filter(
-  #   # We also note, but omit from subsequent analyses, two records of big brown bats in January and February that were reported by community members for rescue.
-  #   !id %in% c(106, 41) 
-  # )
+  )
+# Note: two records of big brown bats found in January (id 41) and February (id 106),
+# reported by community members for rescue, are retained in the output. An earlier
+# version of this analysis omitted them at this stage; that filter is 
+# preserved here for reference:
+# %>% dplyr::filter(!id %in% c(106, 41))
 
 write.csv(df_discovery2, "data/derived/structured_surveys_bats_discovered.csv", row.names = F)
 

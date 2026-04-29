@@ -6,6 +6,10 @@ library(geodata)
 library(rinat)
 library(tidyterra)
 library(data.table)
+library(osmdata)
+library(ggspatial)
+library(usmap)
+library(ggpubr)
 
 
 # Map locations --------------
@@ -49,7 +53,6 @@ df %>%
 
 ## Load OSM data -------
 # These take a minute to load so let's save and reload the outputs.
-library(osmdata)
 if(!file.exists("tmp/KC_osm.RData")) {
   
   # https://jcoliver.github.io/learn-r/017-open-street-map.html
@@ -231,9 +234,12 @@ ggsave(p_big, filename = "figs/map_country.svg", width = 1.69*2,  height = 1.11*
 
 ### Make regional map -----
 
-# Below code uses an object, largeFileStoragePath, that must be set to the location
-# of a directory containing NLCD data in a directory "nlcd".
-# It will also download GADM data there in a folder `geodata` will create ("gadm").
+# The code below requires largeFileStoragePath to be set to the path of a local
+# directory with the following structure:
+#   <largeFileStoragePath>/
+#     nlcd/nlcd_2021_land_cover_l48_20230630/
+#       nlcd_2021_land_cover_l48_20230630.img   # NLCD 2021 land cover raster
+#     gadm/                                     # created automatically by geodata::gadm()
 
 # Load land cover dataset from NLCD.
 nlcd0 <- rast(file.path(largeFileStoragePath, "nlcd/nlcd_2021_land_cover_l48_20230630/nlcd_2021_land_cover_l48_20230630.img"))

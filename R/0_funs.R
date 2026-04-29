@@ -56,6 +56,8 @@ doy_labels <- format(mdy(monthFirsts), "%b")
 # reference the source of these functions if they were used further.
 
 
+# Zero-row template used to initialize the output in downloadResults(); ensures
+# column names and types are correct before rows are appended via rbind.
 emptyDF <- structure(list(scientific_name = character(0), datetime = character(0), 
                           description = logical(0), place_guess = character(0), latitude = numeric(0), 
                           longitude = numeric(0), tag_list = logical(0), common_name = character(0), 
