@@ -10,8 +10,6 @@ library(data.table)
 
 source("R/0_funs.R")
 
-myproj <- "+proj=eqearth +lon_0=0 +datum=WGS84 +units=km +no_defs"
-proj.wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +type=crs"
 
 taxTree <- fread("data/iNat_observations_taxTree.csv")
 world <- ne_countries(scale = "medium", returnclass = "sf") %>% 

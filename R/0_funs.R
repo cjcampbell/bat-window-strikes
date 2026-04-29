@@ -27,6 +27,10 @@ monthDayYear_to_yday <- function(monthDayYear) {
 }
 
 monthFirsts <- paste(month.abb,1,2020, sep ="-")
+
+# Projection strings used across spatial scripts
+proj.wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +type=crs"
+myproj     <- "+proj=eqearth +lon_0=0 +datum=WGS84 +units=km +no_defs"
 doy_labels <- format(mdy(monthFirsts), "%b")
 # 
 # dateGrid <- expand.grid(month.abb,c(1, 8, 15, 22, 29),2020) %>% 

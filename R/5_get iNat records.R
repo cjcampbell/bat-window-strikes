@@ -3,7 +3,7 @@ library(rinat)
 library(readxl)
 # Chiroptera tax ID: 40268
 
-all <- read_excel("data/Current 6-2-2025 iNat bat collision Records sorted.xlsx") %>% 
+all <- read_excel("data/tidy 6-2-2025 iNat bat collision Records sorted.xlsx") %>% 
   dplyr::mutate(
     id = case_when(id == "112964491a" ~ "112964491", TRUE ~ id),
     id = as.integer(id),

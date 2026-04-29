@@ -353,9 +353,9 @@ nrow(df_discovery_survey)
 sum(sd$survey)
 
 # How many bats found alive:
-df_discovery_survey %>% count(Status)
-
-signif(112/(112+12)*100,2)
+df_discovery_survey %>% 
+  dplyr::filter(!id %in% c(106, 41) ) %>% 
+  count(Status)
 
 # How many bats of each species?
 df_discovery_survey %>% 
