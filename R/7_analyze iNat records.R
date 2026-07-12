@@ -699,11 +699,13 @@ ggsave("figs/B_main_combo.svg", f_main_combo, width = 8, height = 8.4)
 ggsave("figs/B_main_combo_data.png", f_main_combo_data, width = 8, height = 6, dpi = 600, bg = "white")
 ggsave("figs/B_main_combo_data.svg", f_main_combo_data, width = 8, height = 8)
 
-(f_main_combo_data <- f_map + cePanel("building_height", dat = radar_data) +
+# Alternate layout
+(f_main_combo_data2 <- f_map + cePanel("building_height", dat = radar_data) +
     cePanel("yday", dat = radar_data) + cePanel("traffic", logx = TRUE, dat = radar_data) +
-    plot_layout(design = "A\nB\nAC\nAD", heights = c(1, 1), widths = c(2,1)) +
+    plot_layout(design = "AB\nAC\nAD", heights = c(1, 1), widths = c(2,1)) +
     plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
     theme(plot.tag = element_text(size = 10), axis.text.x = element_text(size = 8)))
+ggsave("figs/B_main_combo_data2.png", f_main_combo_data2, width = 8, height = 6, dpi = 600, bg = "white")
 
 ## SI: effect sizes and model comparison ----
 # (a) posterior coefficients (relative selection strength) for the two linear
