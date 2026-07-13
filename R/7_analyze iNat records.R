@@ -18,6 +18,7 @@ library(lubridate)
 library(data.table)
 library(rinat)
 library(patchwork)
+library(ggtext)  
 
 # Extract building height at a set of points, treating unmapped (NA) cells as
 # building-free ground (0 m). `points` must already be in the raster's CRS.
@@ -517,14 +518,17 @@ conditional_effects(m_radar_both)
 # Report-quality drafts. Colours reuse sampleColors; "#159367" marks the buffer.
 
 ## Sampling design map ----
-# North America land with subtle state/province boundaries and the Great Lakes, the
-# 100-km "available" buffer, background points (grey), and collisions (red) on top.
-# Projected to a North America Lambert azimuthal equal-area (matches the geodesic
-# buffer, so the radii read as circles). State lines and lakes are pulled with
-# ne_download() (not ne_states(), which needs the CRAN-unavailable
+# North and South America land with subtle state/province boundaries and the Great
+# Lakes, the 100-km "available" buffer, background points (grey), and collisions
+# (red) on top. Projected to a North America Lambert azimuthal equal-area (matches
+# the geodesic buffer, so the radii read as circles). State lines and lakes are
+# pulled with ne_download() (not ne_states(), which needs the CRAN-unavailable
 # rnaturalearthhires) and cached to tmp/. State lines are 1:10m because the 1:50m
-# layer omits Mexico's states.
-na_land <- ne_countries(scale = "medium", continent = "North America", returnclass = "sf")
+# layer omits Mexico's states. South America is included so the northern part of
+# the continent that falls in frame gets its land, borders, and admin-1 lines
+# (coord_sf clips the rest).
+na_land <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(continent %in% c("North America", "South America"))
 if (!file.exists("tmp/ne_state_lines_10m.rds")) {
   saveRDS(ne_download(scale = 10, type = "admin_1_states_provinces_lines",
                       category = "cultural", returnclass = "sf"), "tmp/ne_state_lines_10m.rds")
@@ -559,6 +563,7 @@ proj_na <- "+proj=laea +lat_0=45 +lon_0=-100 +datum=WGS84 +units=m +no_defs"
         legend.position = "inside", legend.position.inside = c(0.01, 0.02),
         legend.justification = c(0, 0), legend.key = element_blank(),
         legend.text = element_text(size = 8),
+        legend.key.size = unit(10, "pt"), legend.key.spacing.y = unit(3, "pt"),
         legend.background = element_rect(fill = "white", colour = "grey70", linewidth = 0.2),
         legend.margin = margin(2, 4, 2, 3)))
 ggsave("figs/B_sampling_map.png", f_map, width = 7, height = 5, dpi = 600, bg = "white")
@@ -589,18 +594,22 @@ ceLabs <- c(building_height = "Building height (m)", yday = "Day of year",
 
 # `dat` (optional) overlays the records as rugs: collisions along the top (accent,
 # prominent), background along the bottom (subtle) — the binary-response analogue of
-# the data points on the Kansas City brms panel.
-cePanel <- function(v, logx = FALSE, dat = NULL) {
+# the data points on the Kansas City brms panel. `y_accuracy` (optional) fixes the
+# y-tick decimal places so several panels get identical axis-text width, which keeps
+# their panel regions exactly equal when arranged side by side (see datatop combo).
+cePanel <- function(v, logx = FALSE, dat = NULL, y_accuracy = NULL) {
   dd <- ceData[[v]]
   dd$x <- dd[[v]]
   g <- ggplot(dd, aes(x, estimate__)) +
     geom_ribbon(
-      aes(ymin = lower__, ymax = upper__), 
+      aes(ymin = lower__, ymax = upper__),
       # fill = "grey85"
       fill = scales::muted(collisionColor, l = 95, c = 20),  # "#A2CAFB"
       ) +
     geom_line(colour = collisionColor) +
-    scale_y_continuous("Relative probability of collision") +
+    scale_y_continuous("Relative probability of collision",
+                       labels = if (is.null(y_accuracy)) waiver() else
+                         scales::label_number(accuracy = y_accuracy)) +
     xlab(ceLabs[v])
   if (!is.null(dat)) {
     g <- g +
@@ -670,9 +679,62 @@ month_shares <- rbindlist(list(
 ggsave("figs/SI_effort_validation.png", f_effort, width = 7, height = 4, dpi = 600, bg = "white")
 ggsave("figs/SI_effort_validation.svg", f_effort, width = 7, height = 4)
 
+## Species composition of collisions over the year ----
+# Descriptive complement to the modeled day-of-year effect: which species collide,
+# and when. Grouping and colours match the iNaturalist descriptive figure (script
+# 6) — the three commonly-identified species plus an "Other/unknown" catch-all.
+# Species are assigned only from research-grade identifications; everything else
+# (coarser or unverified IDs) falls into Other/unknown.
+speciesFocal  <- c("Lasiurus borealis", "Lasionycteris noctivagans", "Eptesicus fuscus")
+speciesLevels <- rev(c(speciesFocal, "Other/unknown"))
+speciesColors <- c("Lasiurus borealis"         = "#9E2A2B",
+                   "Lasionycteris noctivagans"  = "#7072A0",
+                   "Eptesicus fuscus"           = "#A8541F",
+                   "Other/unknown"              = "grey60")
+speciesLabels <- c("Lasiurus borealis"         = "*Lasiurus borealis*",
+                   "Lasionycteris noctivagans"  = "*Lasionycteris noctivagans*",
+                   "Eptesicus fuscus"           = "*Eptesicus fuscus*",
+                   "Other/unknown"              = "Other/unknown")
+collision_species <- collisions_noam %>%
+  st_drop_geometry() %>%
+  transmute(yday, group = factor(
+    if_else(
+      quality_grade == "research" & scientific_name %in% speciesFocal,
+      scientific_name,
+      "Other/unknown"
+    ),
+    levels = speciesLevels
+  ))
+
+# Stacked day-of-year counts. `boundary = 0` anchors the bins so none straddle the
+# Jan/Dec edges and get dropped. Wide-and-short by design (see layout below). The
+# legend is reversed (`reverse = TRUE` reorders the keys only, not the stack, so
+# Lasiurus stays at the bottom of the bars) and sits as a vertical block low and
+# inside the panel, nestled in the summer trough between the two seasonal peaks.
+speciesPanel <- function() {
+  ggplot(collision_species, aes(x = yday, fill = group)) +
+    geom_histogram(binwidth = 14, boundary = 0, colour = "white", linewidth = 0.1) +
+    scale_fill_manual(NULL, values = speciesColors, labels = speciesLabels, drop = FALSE,
+                      guide = guide_legend(ncol = 1, reverse = TRUE)) +
+    scale_x_continuous("Day of year",
+                       breaks = monthDayYear_to_yday(monthFirsts),
+                       labels = format(mdy(monthFirsts), "%b"), expand = c(0.01, 0)) +
+    scale_y_continuous("Number of collision records", expand = expansion(mult = c(0, 0.08))) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "inside",
+          legend.position.inside = c(0.02, 0.98), legend.justification = c(0, 1),
+          legend.title = element_blank(),
+          legend.text = element_markdown(size = 8),   # match the map legend size
+          legend.key.size = unit(10, "pt"),           # key size + spacing match the map legend
+          legend.background = element_blank(),
+          legend.key.spacing.y = unit(3, "pt"))
+}
+
 ## Combined main figure: map (a) over conditional effects (b-d) ----
 # Layout and tagging follow the manuscript combos (e.g. F4_combo): a design-string
 # with the map spanning the top row and the three effect panels beneath.
+# NOTE: several layout drafts are kept below (2x2, map-on-top, map-left, and the
+# data-over-inference version with the species panel) pending a final choice.
 
 # Map on top
 # (f_main_combo <- f_map + cePanel("building_height") + cePanel("yday") +
@@ -699,13 +761,28 @@ ggsave("figs/B_main_combo.svg", f_main_combo, width = 8, height = 8.4)
 ggsave("figs/B_main_combo_data.png", f_main_combo_data, width = 8, height = 6, dpi = 600, bg = "white")
 ggsave("figs/B_main_combo_data.svg", f_main_combo_data, width = 8, height = 8)
 
-# Alternate layout
-(f_main_combo_data2 <- f_map + cePanel("building_height", dat = radar_data) +
-    cePanel("yday", dat = radar_data) + cePanel("traffic", logx = TRUE, dat = radar_data) +
-    plot_layout(design = "AB\nAC\nAD", heights = c(1, 1), widths = c(2,1)) +
-    plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-    theme(plot.tag = element_text(size = 10), axis.text.x = element_text(size = 8)))
-ggsave("figs/B_main_combo_data2.png", f_main_combo_data2, width = 8, height = 6, dpi = 600, bg = "white")
+
+# Another layout: top row (species bar plot + map) over a bottom row of the three
+# effect panels. Built as two separate patchworks and then stacked, so the bottom
+# three panels stay equal-width and aligned with each other regardless of the map's
+# fixed aspect ratio (in a single shared grid the map pulls the columns it spans —
+# and therefore c/d/e — out of alignment). The top-row widths are free to differ.
+# Tags are set per panel (not via plot_annotation) because auto-tagging treats each
+# nested patchwork as one unit and would only tag the two rows.
+p_species <- speciesPanel()                                   + labs(tag = "(a)")
+p_map     <- f_map                                            + labs(tag = "(b)")
+# y_accuracy = 0.001 gives all three the same-width y labels (e.g. 0.600 / 0.075 /
+# 0.040), so their panel regions come out exactly equal.
+p_bh      <- cePanel("building_height", dat = radar_data, y_accuracy = 0.001) + labs(tag = "(c)")
+p_yday    <- cePanel("yday", dat = radar_data, y_accuracy = 0.001)            + labs(tag = "(d)")
+p_traffic <- cePanel("traffic", logx = TRUE, dat = radar_data, y_accuracy = 0.001) + labs(tag = "(e)")
+datatop_top    <- p_species + p_map + plot_layout(widths = c(1, 1))
+datatop_bottom <- p_bh + p_yday + p_traffic + plot_layout(nrow = 1)
+(f_main_combo_datatop_data <- wrap_plots(datatop_top, datatop_bottom, ncol = 1,
+                                         heights = c(1.5, 1)) &
+   theme(plot.tag = element_text(size = 10), axis.text.x = element_text(size = 8)))
+ggsave("figs/B_main_combo_datatop_data.png", f_main_combo_datatop_data, width = 9, height = 6, dpi = 600, bg = "white")
+ggsave("figs/B_main_combo_datatop_data.svg", f_main_combo_datatop_data, width = 9, height = 6)
 
 ## SI: effect sizes and model comparison ----
 # (a) posterior coefficients (relative selection strength) for the two linear
