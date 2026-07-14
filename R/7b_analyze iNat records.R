@@ -4,8 +4,14 @@
 #          background of iNaturalist records.
 # Inputs:  data/iNat_observations_tidy_manualChecks.csv   (retained collisions)
 #          data/building height data/GBH2020_150m_GEDI.tif (Ma et al. 2023)
+#          data/ALAN/VNL_npp_2024_vcmslcfg_v2_NAcrop.tif   (VIIRS VNL v2 2024;
+#            North America crop from "7a_prep ALAN crop.R"; Elvidge et al. 2021)
 # Outputs: tmp/inat_background.csv          (background records, cached)
 #          tmp/inat_background_effort.csv   (monthly effort / phenology reference)
+# Figures: figs/B_main_combo_datatop_data.{png,svg}  (main use-availability figure)
+#          figs/B_contrasts.{png,svg}                (raw use-vs-available contrasts)
+#          figs/SI_effort_validation.{png,svg}
+#          figs/SI_effectsize_loo.{png,svg}
 
 
 # Setup ----
@@ -26,6 +32,15 @@ library(ggtext)
 extractBuildingHeight <- function(points, height_raster) {
   terra::extract(height_raster, points, ID = FALSE) %>%
     transmute(building_height = replace_na(building_height, 0))
+}
+
+# Extract VIIRS nighttime radiance (ALAN) at a set of points. Unlike building
+# height, `points` are transformed to the raster's lon/lat (EPSG:4326) here, so the
+# caller need not pre-project. Negative-radiance artifacts are clamped to 0, and
+# any unmapped cell is treated as unlit (0), mirroring the building-height NA rule.
+extractALAN <- function(points, alan_raster) {
+  vals <- terra::extract(alan_raster, st_transform(points, crs(alan_raster)), ID = FALSE)$alan
+  tibble(alan = pmax(replace_na(vals, 0), 0))
 }
 
 # Bounding box of an sf/sfc geometry as the c(swlat, swlng, nelat, nelng) vector
@@ -120,8 +135,17 @@ if(!exists("bh_raster")) {
   names(bh_raster) <- "building_height"
 }
 
+## Load ALAN data ----
+# VIIRS VNL v2 2024 annual composite (median-masked; Elvidge et al. 2021),
+# cropped to the North American background region by "7a_prep ALAN crop.R".
+# Nighttime radiance in nW/cm2/sr; native EPSG:4326 (reprojected on extract).
+if(!exists("alan_raster")) {
+  alan_raster <- rast("data/ALAN/VNL_npp_2024_vcmslcfg_v2_NAcrop.tif")
+  names(alan_raster) <- "alan"
+}
+
 # Precise North American collision points, restricted to 2019-2025.
-# Drop six pre-2019 records are dropped from both use and background to match
+# Six pre-2019 records are dropped from both use and background to match
 # availability of iNaturalist data.
 # Project to the raster's native (metric) CRS.
 # Also drop iNaturalist observations w/ obscured coordinates (randomized w/in 0.2 degrees).
@@ -243,12 +267,11 @@ if(!file.exists(background_file)) {
     mutate(download_date = as.character(Sys.Date()))
 
   ## Filter to precise coordinates inside the buffer, dedup, trim to target ----
-  # Drop observations with obscured or missing coordinates, restrictive licenses.
-  # Keep 1 row/observation, restrict to 100-km buffer.
-  # Spatially restrict to the 100-km buffer, and subsample to the target region.
-  # Keep  `user_login` and `license` are kept for contributor attribution 
-  # and to ensure credit + reproducibility.
-  
+  # Drop observations with obscured or missing coordinates and restrictive licenses,
+  # keep one row per observation, restrict to the 100-km buffer, and subsample to the
+  # target region. `user_login` and `license` are kept for contributor attribution
+  # (credit + reproducibility).
+
   background_clean <- background_raw %>%
     filter(
       !is.na(latitude), !is.na(longitude),
@@ -286,11 +309,18 @@ bh_background <- collisions_background %>%
 bh_compare <- bind_rows(bh_use, bh_background) %>%
   mutate(sample = factor(sample, levels = c("collision site", "background (available)")))
 
+# Extract ALAN ----
+# Nighttime radiance at the same use (collision) and available (background) points.
+alan_use        <- extractALAN(collisions_noam, alan_raster)
+alan_background <- extractALAN(collisions_background, alan_raster)
+
 # Assemble modelling df ----
-# Use (collision = 1) vs available (background = 0), with building height and yday.
+# Use (collision = 1) vs available (background = 0), with building height, ALAN, yday.
 model_data <- bind_rows(
-  tibble(used = 1, building_height = bh_use$building_height,        yday = collisions_noam$yday),
-  tibble(used = 0, building_height = bh_background$building_height, yday = collisions_background$yday)
+  tibble(used = 1, building_height = bh_use$building_height,
+         alan = alan_use$alan,        yday = collisions_noam$yday),
+  tibble(used = 0, building_height = bh_background$building_height,
+         alan = alan_background$alan, yday = collisions_background$yday)
 )
 
 # Exploratory comparison ----
@@ -320,21 +350,6 @@ sampleColors <- c(
                      breaks = monthDayYear_to_yday(monthFirsts),
                      labels = format(mdy(monthFirsts), "%b")) +
   scale_colour_manual(NULL, values = sampleColors))
-
-# Map of the sampling design ----
-# The 100-km buffer (the "available" region), background points, and collisions.
-na_basemap <- ne_countries(scale = "medium", continent = "North America",
-                           returnclass = "sf")
-
-(p_design_map <- ggplot() +
-  geom_sf(data = na_basemap, fill = "grey99", colour = "grey80", linewidth = 0.2) +
-  geom_sf(data = background_region, fill = "#159367", colour = "#159367", alpha = 0.05, linewidth = 0.03) +
-  geom_sf(data = st_transform(collisions_background, proj.wgs84),
-          colour = "grey40", size = 0.2, alpha = 0.4) +
-  geom_sf(data = st_transform(collisions_noam, proj.wgs84),
-          colour = collisionColor, size = 0.45) +
-  coord_sf(xlim = c(-128, -66), ylim = c(7, 53)) +
-  theme_void())
 
 # Example location ----
 # A single collision point, its 1-km surroundings, and local building heights,
@@ -396,10 +411,31 @@ loo_compare(m_useavail, m_useavail_quad)
 
 conditional_effects(m_useavail_quad)
 
-# Additional covariates (lower priority) ----
-# Land cover and ALAN are expected to correlate strongly with building height, so
-# they may not enter; check collinearity (e.g., VIF) before adding. Distance to
-# water is a candidate third covariate.
+# ALAN covariate ----
+# Nighttime radiance (ALAN; VIIRS VNL v2 2024) is a candidate structural driver
+# alongside building height. At the use/available points the two are only
+# moderately correlated (Pearson r ~ 0.62 on the log1p scale; pairwise VIF ~ 1.6),
+# so both can enter without severe collinearity. Full-data model swapping height
+# for ALAN (parallel to m_useavail, same rows for a fair LOO): does light alone
+# track collisions? Building-height-plus-ALAN and the radar-matched comparisons
+# follow in the radar section below.
+m_useavail_alan <- brm(
+  bf(used ~ log1p(alan) + ns(yday, 5)),
+  data = model_data,
+  family = bernoulli(),
+  cores = 4,
+  chains = 4,
+  seed = 42,
+  iter = 5000,
+  warmup = 1000,
+  threads = threading(4),
+  backend = "cmdstanr",
+  file = "out/models/m_useavail_alan_yday.rds"
+)
+m_useavail_alan <- add_criterion(m_useavail_alan, "loo")
+loo_compare(m_useavail, m_useavail_alan)
+
+# Land cover and distance to water remain candidate covariates (not yet added).
 
 # Radar migration term ----
 # Nightly bird-migration traffic (Dark Ecology; a deliberate proxy for bat
@@ -433,10 +469,10 @@ radarCols <- function(points_sf, obs_date) {
 
 radar_data <- rbind(
   cbind(data.table(used = 1, building_height = bh_use$building_height,
-                   yday = collisions_noam$yday),
+                   alan = alan_use$alan, yday = collisions_noam$yday),
         radarCols(collisions_noam, collisions_noam$date)),
   cbind(data.table(used = 0, building_height = bh_background$building_height,
-                   yday = collisions_background$yday),
+                   alan = alan_background$alan, yday = collisions_background$yday),
         radarCols(collisions_background, as_date(collisions_background$observed_on)))
 ) %>%
   merge(radar_night, by = c("station", "radar_date"), all.x = TRUE) %>%
@@ -476,7 +512,6 @@ radar <- data.frame(
   scale_colour_manual(values = c(collision = collisionColor, background = "grey45")) +
   coord_sf(xlim = c(-125, -68), ylim = c(12, 52)) +
   theme_void())
-ggsave("figs/radar_station_assignment.png", p_station_radar, width = 8, height = 5, dpi = 150, bg = "white")
 
 # Competing models on the radar-matched subset (same rows, for a fair LOO):
 # seasonal spline only, night traffic only, and both. Traffic is log1p-transformed
@@ -503,15 +538,37 @@ m_radar_both <- brm(
   threads = threading(4), backend = "cmdstanr",
   file = "out/models/m_useavail_radar_both.rds"
 )
+# ALAN on the radar-matched subset: swap height for ALAN (m_radar_alan), and add
+# ALAN to the previous top model (m_radar_all) to see whether the height effect
+# survives once light is in. Same rows as the models above, for a fair LOO.
+m_radar_alan <- brm(
+  bf(used ~ log1p(alan) + ns(yday, 5) + log1p(traffic)),
+  data = radar_data, family = bernoulli(),
+  cores = 4, chains = 4, seed = 42, iter = 5000, warmup = 1000,
+  threads = threading(4), backend = "cmdstanr",
+  file = "out/models/m_useavail_radar_alan.rds"
+)
+m_radar_all <- brm(
+  bf(used ~ log1p(building_height) + log1p(alan) + ns(yday, 5) + log1p(traffic)),
+  data = radar_data, family = bernoulli(),
+  cores = 4, chains = 4, seed = 42, iter = 5000, warmup = 1000,
+  threads = threading(4), backend = "cmdstanr",
+  file = "out/models/m_useavail_radar_all.rds"
+)
 m_season_sub <- add_criterion(m_season_sub, "loo")
 m_radar_only <- add_criterion(m_radar_only, "loo")
 m_radar_both <- add_criterion(m_radar_both, "loo")
+m_radar_alan <- add_criterion(m_radar_alan, "loo")
+m_radar_all  <- add_criterion(m_radar_all, "loo")
 
-# "Both" is expected to win; traffic stays positive with the spline in the model,
-# i.e. collisions track actual migration intensity on the night before, beyond
-# seasonal timing.
-loo_compare(m_season_sub, m_radar_only, m_radar_both)
-fixef(m_radar_both)["log1ptraffic", ]
+# m_radar_both (height + season + traffic) was the previous top model. The two ALAN
+# models test whether light, not raw height, carries the built-environment signal:
+# m_radar_all adds ALAN to the top model (does the height coefficient survive?), and
+# m_radar_alan swaps height for ALAN. Exploratory fits showed ALAN dominant, the
+# height effect largely absorbed, and traffic still positive; LOO confirms below at
+# production settings.
+loo_compare(m_season_sub, m_radar_only, m_radar_both, m_radar_alan, m_radar_all)
+fixef(m_radar_all)[c("log1pbuilding_height", "log1palan", "log1ptraffic"), ]
 conditional_effects(m_radar_both)
 
 # Figures ----
@@ -566,10 +623,11 @@ proj_na <- "+proj=laea +lat_0=45 +lon_0=-100 +datum=WGS84 +units=m +no_defs"
         legend.key.size = unit(10, "pt"), legend.key.spacing.y = unit(3, "pt"),
         legend.background = element_rect(fill = "white", colour = "grey70", linewidth = 0.2),
         legend.margin = margin(2, 4, 2, 3)))
-ggsave("figs/B_sampling_map.png", f_map, width = 7, height = 5, dpi = 600, bg = "white")
-ggsave("figs/B_sampling_map.svg", f_map, width = 7, height = 5)
+# f_map is not saved on its own; it enters the combined figure below as panel (b).
 
-## Conditional effects of the top model (building height + season + night traffic) ----
+## Conditional-effect panels of the top model (building height + season + night traffic) ----
+# Builds the conditional-effects data and the cePanel() helper used for panels (c-e)
+# of the combined main figure below.
 ce <- conditional_effects(m_radar_both)
 # Recompute the traffic effect on a log-spaced grid (other covariates held at their
 # mean, as conditional_effects does) so the line is smooth on the log axis instead
@@ -629,13 +687,6 @@ cePanel <- function(v, logx = FALSE, dat = NULL, y_accuracy = NULL) {
   }
   g
 }
-(f_condeffects <- cePanel("building_height") + cePanel("yday") +
-    cePanel("traffic", logx = TRUE) +
-    plot_layout(nrow = 1) +
-    plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-    theme(axis.text.x = element_text(size = 7)))
-ggsave("figs/B_conditional_effects.png", f_condeffects, width = 10, height = 3.2, dpi = 600)
-ggsave("figs/B_conditional_effects.svg", f_condeffects, width = 10, height = 3.2)
 
 ## Raw use-vs-available contrasts ----
 contrast_data <- radar_data %>%
@@ -730,45 +781,15 @@ speciesPanel <- function() {
           legend.key.spacing.y = unit(3, "pt"))
 }
 
-## Combined main figure: map (a) over conditional effects (b-d) ----
-# Layout and tagging follow the manuscript combos (e.g. F4_combo): a design-string
-# with the map spanning the top row and the three effect panels beneath.
-# NOTE: several layout drafts are kept below (2x2, map-on-top, map-left, and the
-# data-over-inference version with the species panel) pending a final choice.
-
-# Map on top
-# (f_main_combo <- f_map + cePanel("building_height") + cePanel("yday") +
-#    cePanel("traffic", logx = TRUE) +
-#    plot_layout(design = "AAA\nBCD", heights = c(1.9, 1)) +
-#    plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-#    theme(plot.tag = element_text(size = 10), axis.text.x = element_text(size = 8)))
-
-# 2x2
-(f_main_combo <- f_map + cePanel("building_height") + cePanel("yday") +
-    cePanel("traffic", logx = TRUE) +
-    plot_layout(design = "AB\nCD", heights = c(1, 1)) +
-    plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-    theme(plot.tag = element_text(size = 10), axis.text.x = element_text(size = 8)))
-ggsave("figs/B_main_combo.png", f_main_combo, width = 8, height = 8.4, dpi = 600, bg = "white")
-ggsave("figs/B_main_combo.svg", f_main_combo, width = 8, height = 8.4)
-
-# Version with the underlying records overlaid as rugs (collisions top, background bottom).
-(f_main_combo_data <- f_map + cePanel("building_height", dat = radar_data) +
-    cePanel("yday", dat = radar_data) + cePanel("traffic", logx = TRUE, dat = radar_data) +
-    plot_layout(design = "AB\nCD", heights = c(1, 1)) +
-    plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-    theme(plot.tag = element_text(size = 10), axis.text.x = element_text(size = 8)))
-ggsave("figs/B_main_combo_data.png", f_main_combo_data, width = 8, height = 6, dpi = 600, bg = "white")
-ggsave("figs/B_main_combo_data.svg", f_main_combo_data, width = 8, height = 8)
-
-
-# Another layout: top row (species bar plot + map) over a bottom row of the three
-# effect panels. Built as two separate patchworks and then stacked, so the bottom
-# three panels stay equal-width and aligned with each other regardless of the map's
-# fixed aspect ratio (in a single shared grid the map pulls the columns it spans —
-# and therefore c/d/e — out of alignment). The top-row widths are free to differ.
-# Tags are set per panel (not via plot_annotation) because auto-tagging treats each
-# nested patchwork as one unit and would only tag the two rows.
+## Combined main figure ----
+# Top row: species composition over day of year (a) beside the sampling map (b);
+# bottom row: the three modeled conditional effects (c-e). Built as two separate
+# patchworks and then stacked, so the bottom three panels stay equal-width and
+# aligned with each other regardless of the map's fixed aspect ratio (in a single
+# shared grid the map pulls the columns it spans, and therefore c/d/e, out of
+# alignment). The top-row widths are free to differ. Tags are set per panel (not
+# via plot_annotation) because auto-tagging treats each nested patchwork as one
+# unit and would only tag the two rows.
 p_species <- speciesPanel()                                   + labs(tag = "(a)")
 p_map     <- f_map                                            + labs(tag = "(b)")
 # y_accuracy = 0.001 gives all three the same-width y labels (e.g. 0.600 / 0.075 /
