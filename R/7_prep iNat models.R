@@ -33,7 +33,7 @@ library(rinat)
 # building-free ground (0 m). `points` must already be in the raster's CRS.
 # `extract` is masked by tidyr, hence the terra:: qualifier.
 extractBuildingHeight <- function(points, height_raster) {
-  terra::extract(height_raster, points, ID = FALSE) %>%
+  terra::extract(height_raster, points, ID = FALSE) |>
     transmute(building_height = replace_na(building_height, 0))
 }
 
@@ -132,14 +132,14 @@ resumableDownload <- function(ids, fetch, out_file, done_file, retries = 3, slee
 # Load collision records ----
 # Manually-checked iNaturalist records (retained: CJ.manual.check == "y"),
 # matched to continent via a spatial join with country polygons.
-world <- ne_countries(scale = "medium", returnclass = "sf") %>%
-  st_transform(myproj) %>%
+world <- ne_countries(scale = "medium", returnclass = "sf") |>
+  st_transform(myproj) |>
   select(admin, adm0_a3, continent)
 
-collisions <- read.csv("data/iNat_observations_tidy_manualChecks.csv") %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = proj.wgs84, remove = FALSE) %>%
-  st_transform(myproj) %>%
-  filter(CJ.manual.check == "y") %>%
+collisions <- read.csv("data/iNat_observations_tidy_manualChecks.csv") |>
+  st_as_sf(coords = c("longitude", "latitude"), crs = proj.wgs84, remove = FALSE) |>
+  st_transform(myproj) |>
+  filter(CJ.manual.check == "y") |>
   st_join(world)
 
 # Load building-height raster ----
@@ -155,12 +155,12 @@ if (!exists("bh_raster")) {
 # records are dropped from both use and background to match iNaturalist data
 # availability. Also drops observations with obscured (randomized within 0.2 deg)
 # coordinates. Projected to the height raster's native (metric) CRS for extraction.
-collisions_noam <- collisions %>%
-  filter(continent == "North America", geoprivacy != "obscured") %>%
+collisions_noam <- collisions |>
+  filter(continent == "North America", geoprivacy != "obscured") |>
   mutate(date = as_date(as.POSIXct(datetime)),
          year = year(date),
-         yday = yday(date)) %>%
-  filter(year %in% 2019:2025) %>%
+         yday = yday(date)) |>
+  filter(year %in% 2019:2025) |>
   st_transform(crs(bh_raster))
 
 # 100-km geodesic buffer around collisions defines the "available" region.
@@ -168,9 +168,9 @@ collisions_noam <- collisions %>%
 # towards eastern North America records and removes continental gradients. Buffer
 # geodesically on lon/lat (s2) for a true 100-km radius; buffering in the raster's
 # metric CRS would skew the radius E-W and make the region anisotropic.
-background_region <- collisions_noam %>%
-  st_transform(proj.wgs84) %>%
-  st_buffer(dist = 100e3) %>%
+background_region <- collisions_noam |>
+  st_transform(proj.wgs84) |>
+  st_buffer(dist = 100e3) |>
   st_union()
 background_region <- st_sf(geometry = background_region)
 
@@ -222,11 +222,11 @@ if (!file.exists(background_file)) {
   ## Grid the region into 2-deg cells ----
   # Querying a small cell at a time keeps per-query record counts under the API's
   # 10,000 cap and lets effort be weighted across space.
-  cells <- st_make_grid(background_region, cellsize = 2) %>%
-    st_sf() %>%
-    st_make_valid() %>%
-    mutate(cell_id = row_number()) %>%
-    st_filter(st_make_valid(background_region)) %>%
+  cells <- st_make_grid(background_region, cellsize = 2) |>
+    st_sf() |>
+    st_make_valid() |>
+    mutate(cell_id = row_number()) |>
+    st_filter(st_make_valid(background_region)) |>
     st_make_valid()
 
   ## Per-cell monthly effort ----
@@ -245,18 +245,18 @@ if (!file.exists(background_file)) {
 
   # Arrange to a stable order so the block sampling below is reproducible across
   # restarts (row order feeds sample.int).
-  effort <- fread("tmp/inat_background_effort.csv") %>%
-    mutate(year = year(month_start)) %>%
-    filter(year %in% 2019:2025, n_effort > 0) %>%
+  effort <- fread("tmp/inat_background_effort.csv") |>
+    mutate(year = year(month_start)) |>
+    filter(year %in% 2019:2025, n_effort > 0) |>
     arrange(cell_id, month_start)
 
   ## Year quotas matched to the collisions ----
   # Background per-year totals mirror collision per-year counts, removing
   # iNaturalist's exponential growth as a confound while leaving the within-year
   # (phenological) effort structure intact.
-  year_quota <- collisions_noam %>%
-    st_drop_geometry() %>%
-    count(year, name = "n_collision") %>%
+  year_quota <- collisions_noam |>
+    st_drop_geometry() |>
+    count(year, name = "n_collision") |>
     mutate(quota = round(n_background * oversample * n_collision / sum(n_collision)))
 
   ## Sample (cell x month) blocks in proportion to effort, within each year ----
@@ -265,7 +265,7 @@ if (!file.exists(background_file)) {
     n_blocks <- ceiling(year_quota$quota[year_quota$year == y] / records_per_block)
     pool[sample.int(nrow(pool), n_blocks, replace = TRUE, prob = pool$n_effort),
          c("cell_id", "month_start")]
-  }) %>%
+  }) |>
     bind_rows()
 
   ## Fetch a random page per block and keep a few records each ----
@@ -296,38 +296,50 @@ if (!file.exists(background_file)) {
     out_file  = "tmp/background_raw.csv",
     done_file = "tmp/background_blocks_done.csv"
   )
-  background_raw <- fread("tmp/background_raw.csv") %>%
+  background_raw <- fread("tmp/background_raw.csv") |>
     mutate(download_date = as.character(Sys.Date()))
 
   ## Filter to precise coordinates inside the buffer, dedup, trim to target ----
   # Drop observations with obscured or missing coordinates and restrictive licenses,
   # keep one row per observation, restrict to the 100-km buffer, and subsample to the
   # target region. `user_login` and `license` are kept for contributor attribution.
-  background_clean <- background_raw %>%
+  background_clean <- background_raw |>
     filter(
-      !is.na(latitude), !is.na(longitude),
+      !is.na(latitude),
+      !is.na(longitude),
       !coordinates_obscured %in% c("true", TRUE),
-      license != "") %>%
-    distinct(id, .keep_all = TRUE) %>%
-    st_as_sf(coords = c("longitude", "latitude"), crs = proj.wgs84, remove = FALSE) %>%
-    st_filter(st_make_valid(background_region)) %>%
-    st_drop_geometry() %>%
-    select(any_of(c("id", "url", "user_login", "license", "observed_on", "datetime",
-                    "latitude", "longitude", "positional_accuracy",
-                    "coordinates_obscured", "quality_grade", "iconic_taxon_name", "download_date"))) %>%
-    mutate(download_date = as.character(Sys.Date())) %>%
+      license != ""
+    ) |>
+    distinct(id, .keep_all = TRUE) |>
+    st_as_sf(
+      coords = c("longitude", "latitude"),
+      crs = proj.wgs84,
+      remove = FALSE
+    ) |>
+    st_filter(st_make_valid(background_region)) |>
+    st_drop_geometry() |>
+    select(any_of(
+      c( "id", "url", "user_login", "license", "observed_on", "datetime", "latitude", "longitude", "positional_accuracy", "coordinates_obscured", "quality_grade", "iconic_taxon_name", "download_date" )
+    )) |>
+    mutate(download_date = as.character(Sys.Date())) |>
     slice_sample(n = min(n_background, nrow(.)))
-
+  
   stopifnot("Background download returned no records" = nrow(background_clean) > 0)
   fwrite(background_clean, background_file)
   file.copy("tmp/inat_background_effort.csv", effort_file, overwrite = TRUE)  # freeze effort ref
 }
 
-collisions_background <- fread(background_file) %>%
-  mutate(date = as_date(observed_on),
-         year = year(date),
-         yday = yday(date)) %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = proj.wgs84, remove = FALSE) %>%
+collisions_background <- fread(background_file) |>
+  mutate(
+    date = as_date(observed_on),
+    year = year(date),
+    yday = yday(date)
+  ) |>
+  st_as_sf(
+    coords = c("longitude", "latitude"),
+    crs = proj.wgs84,
+    remove = FALSE
+  ) |>
   st_transform(crs(bh_raster))
 
 # Extract predictors ----
@@ -335,7 +347,7 @@ collisions_background <- fread(background_file) %>%
 # available (background) points, so the modelling script never touches a raster or
 # a station table. `stations` and `radar_night` are loaded first because radarCols()
 # needs them.
-stations <- fread("data/darkecology/nexrad-stations.csv") %>%
+stations <- fread("data/darkecology/nexrad-stations.csv") |>
   st_as_sf(coords = c("lon", "lat"), crs = proj.wgs84, remove = FALSE)
 radar_night <- rbindlist(lapply(2019:2025, function(y) {
   fread(sprintf("data/darkecology/daily/%d-daily.csv", y))[
@@ -354,9 +366,9 @@ alan_background <- extractALAN(collisions_background, alan_raster)
 # night prior to discovery. Matches beyond radar range (>200 km) or with no traffic
 # record are kept as NA here and dropped to the radar-matched subset in the
 # modelling script (keeping one derived table for both the full and radar analyses).
-radar_use <- cbind(collisions_noam[, c("longitude", "latitude")] %>% st_drop_geometry(),
+radar_use <- cbind(collisions_noam[, c("longitude", "latitude")] |> st_drop_geometry(),
                    radarCols(collisions_noam, collisions_noam$date))
-radar_bg  <- cbind(collisions_background[, c("longitude", "latitude")] %>% st_drop_geometry(),
+radar_bg  <- cbind(collisions_background[, c("longitude", "latitude")] |> st_drop_geometry(),
                    radarCols(collisions_background, collisions_background$date))
 
 # Assemble one analysis-ready table (one row per use/available point) ----

@@ -5,48 +5,48 @@ library(splines)
 library(glmmTMB)
 library(sjPlot)
 
-df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv") %>% 
+df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv") |> 
   mutate(date = as_date(date))
-sd <- read.csv("data/derived/structured_surveys_schedule.csv") %>% 
+sd <- read.csv("data/derived/structured_surveys_schedule.csv") |> 
   mutate(date = as_date(date))
 
 # Find counts / survey date
-df_discovery3 <- left_join(sd, df_discovery2) %>% 
+df_discovery3 <- left_join(sd, df_discovery2) |> 
   dplyr::filter(survey == TRUE) 
-dat_surv <- df_discovery3 %>% 
-  count(date, species) %>% 
-  pivot_wider(names_from = species, values_from = n, names_prefix = "count_") %>% 
-  dplyr::select(-`count_NA`) %>% 
-  replace(is.na(.), 0) %>% 
-  rowwise() %>% 
+dat_surv <- df_discovery3 |> 
+  count(date, species) |> 
+  pivot_wider(names_from = species, values_from = n, names_prefix = "count_") |> 
+  dplyr::select(-`count_NA`) |> 
+  replace(is.na(.), 0) |> 
+  rowwise() |> 
   mutate(
     count_total_bats = rowSums(across(starts_with("count_"))),
     presence_any_bats = as.numeric(count_total_bats>0),
     yday = yday(date),
     year = year(date)
-  ) %>% 
+  ) |> 
   ungroup
 
 # Summarize record timing --------------
 
-dat_surv %>% 
+dat_surv |> 
   dplyr::summarise(
     count_total_bats = sum(count_total_bats), .by = "yday"
-  ) %>% 
-  dplyr::filter(count_total_bats != 0) %>% 
-  arrange(yday) %>% 
+  ) |> 
+  dplyr::filter(count_total_bats != 0) |> 
+  arrange(yday) |> 
   mutate(
     month = yDay_to_Month(yday),
     season = case_when(yday < 160 ~ "spring", yday >= 160 ~ "autumn")
-  ) %>% 
-  group_by(season) %>% 
-  uncount(count_total_bats) %>% 
+  ) |> 
+  group_by(season) |> 
+  uncount(count_total_bats) |> 
   dplyr::summarise(
     q02.5 = quantile(yday, probs = c(0.025)),
     q50.0 = quantile(yday, probs = c(0.5)),
     q97.5 = quantile(yday, probs = c(0.975))
-  ) %>% 
-  pivot_longer(cols = -season, names_to = "quantile", values_to = "yday") %>% 
+  ) |> 
+  pivot_longer(cols = -season, names_to = "quantile", values_to = "yday") |> 
   mutate(
     monthDay = yDay_to_monthDay(yday)
   )
@@ -133,7 +133,7 @@ plot(conditional_effects(m_abundance_all_ng,  method = "posterior_epred"),
      points = T,
      offset = T) 
 
-p_epred <- conditional_effects(m_abundance_all_ng,  method = "posterior_epred")[[1]] %>% 
+p_epred <- conditional_effects(m_abundance_all_ng,  method = "posterior_epred")[[1]] |> 
   ggplot() +
   aes(x = yday) +
   # geom_col(data = dat_surv, aes(y = count_total_bats)) +
@@ -165,7 +165,7 @@ pred_out <- predict(
   m_abundance_all_poi, 
   probs = c(0.025, 0.25, 0.5, 0.75, 0.975),
   newdata = pred_df
-) %>% 
+) |> 
   cbind(pred_df, .)
 
 ggplot(pred_out) +
@@ -190,11 +190,11 @@ plot(conditional_effects(m_abundance_all_poi, method = "posterior_predict", prob
      offset = T) 
 
 library(tidybayes)
-p_re_year <- MCMCvis::MCMCchains(m_abundance_all_ng) %>% 
-  as.data.frame() %>% 
-  dplyr::select(starts_with("year")) %>% 
-  pivot_longer(cols = everything()) %>% 
-  dplyr::mutate(name = gsub(",Intercept\\]", "", gsub("year\\[", "", name))) %>% 
+p_re_year <- MCMCvis::MCMCchains(m_abundance_all_ng) |> 
+  as.data.frame() |> 
+  dplyr::select(starts_with("year")) |> 
+  pivot_longer(cols = everything()) |> 
+  dplyr::mutate(name = gsub(",Intercept\\]", "", gsub("year\\[", "", name))) |> 
   ggplot() +
   geom_vline(xintercept = 0, linewidth = 0.1) +
   stat_halfeye(aes(x = value, y = name), alpha = 0.5) +

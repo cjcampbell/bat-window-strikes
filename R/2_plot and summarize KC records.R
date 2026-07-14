@@ -21,10 +21,10 @@ names(speciesColors2) <- c( "Eptesicus fuscus", "Nycticeius humeralis", "Other/u
 
 
 # Bar plot of frequencies -------------------------
-sd <- fread("data/derived/structured_surveys_schedule.csv") %>% 
+sd <- fread("data/derived/structured_surveys_schedule.csv") |> 
   mutate(date = as_date(date))
 
-df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv") %>% 
+df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv") |> 
   mutate(
     species = factor(species, levels = c(
       "Evening", "Big brown", "Eastern Red",
@@ -66,13 +66,13 @@ df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv")
       TRUE ~ group_lab
     ),
     date = as_date(date)
-  ) %>% 
+  ) |> 
   left_join(., sd)
 
-df_discovery2 %>% 
-  count(species) %>% 
-  arrange(desc(n)) %>% 
-  mutate(species = factor(species, levels = unique(.$species))) %>% 
+df_discovery2 |> 
+  count(species) |> 
+  arrange(desc(n)) |> 
+  mutate(species = factor(species, levels = unique(.$species))) |> 
   ggplot() +
   geom_col(aes(x= species, y = n, fill = species)) +
   scale_y_continuous("Number of Kansas City records",
@@ -84,29 +84,29 @@ df_discovery2 %>%
     breaks = levels(df_discovery2$species)
   ) 
 
-df_discovery2 %>% 
+df_discovery2 |> 
   count(survey)
 
-df_discovery2 %>% 
+df_discovery2 |> 
   count(survey, species)
 
 
 ## Change to scientific names --------------
 
 ### Include incidental records -------
-(p_KC_records_by_species_incidental <- df_discovery2 %>% 
-  count(group, group_lab, survey) %>% 
-  arrange(desc(n)) %>% 
+(p_KC_records_by_species_incidental <- df_discovery2 |> 
+  count(group, group_lab, survey) |> 
+  arrange(desc(n)) |> 
    mutate(
      max_x = sum(n), .by = group,
-   ) %>% 
+   ) |> 
   mutate(
     group_lab = factor(group_lab, levels = rev(unique(.$group_lab))),
     survey = factor(survey),
     text_x = case_when(
         survey == TRUE ~ n,
         TRUE ~ max_x
-      )) %>% 
+      )) |> 
   ggplot() +
   geom_col(aes(y= group_lab, x = n, fill = group, alpha = survey)) +
   geom_text(aes(y = group_lab, x = text_x, label = n),  vjust = 2, hjust = 1.1, color = "white", size = 3) +
@@ -131,15 +131,15 @@ saveRDS(p_KC_records_by_species_incidental, "tmp/p_KC_records_by_species_with in
 
 #### Barplot of counts =======
 
-ddd_bygroup <- df_discovery2 %>% 
-  dplyr::filter(survey == TRUE) %>% 
-  dplyr::mutate(species = case_when(group_lab2 != "Other" ~ species, TRUE ~ "Other")) %>% 
-  count(group_lab2, species, survey) %>% 
+ddd_bygroup <- df_discovery2 |> 
+  dplyr::filter(survey == TRUE) |> 
+  dplyr::mutate(species = case_when(group_lab2 != "Other" ~ species, TRUE ~ "Other")) |> 
+  count(group_lab2, species, survey) |> 
   mutate(group = factor(group_lab2, levels = c("Other", "<i>Lasiurus borealis</i>", "<i>Eptesicus fuscus</i>", 
-                                               "<i>Nycticeius humeralis</i>"))) %>% 
+                                               "<i>Nycticeius humeralis</i>"))) |> 
   mutate(
     max_x = sum(n), .by = group,
-  ) %>% 
+  ) |> 
   mutate(
     x_position = case_when(
     survey == FALSE ~ max_x,
@@ -149,12 +149,12 @@ ddd_bygroup <- df_discovery2 %>%
   n_lab = case_when(survey == FALSE ~ paste0("(", n, ")"), TRUE ~ as.character(n))
   )
 
-ddd_Others <- df_discovery2 %>%
-  dplyr::filter(survey == TRUE) %>% 
-  dplyr::filter(group_lab2 == "Other") %>% 
-  mutate(group_lab = case_when(group_lab == "Other/unknown"~ "Unknown", TRUE ~ group_lab)) %>% 
-  count(group_lab) %>% 
-  arrange(desc(n)) %>% 
+ddd_Others <- df_discovery2 |>
+  dplyr::filter(survey == TRUE) |> 
+  dplyr::filter(group_lab2 == "Other") |> 
+  mutate(group_lab = case_when(group_lab == "Other/unknown"~ "Unknown", TRUE ~ group_lab)) |> 
+  count(group_lab) |> 
+  arrange(desc(n)) |> 
   mutate(rownum = 4 - row_number())
 
 (p_KC_records_barplot <- ggplot(ddd_bygroup) +
@@ -207,17 +207,17 @@ for(surveyOnly in c(TRUE, FALSE)) {
   p_yday_species_list <- lapply(c("Evening", "Big brown", "Eastern Red", "Others"), function(x) {
     
     if(surveyOnly == TRUE) {
-      mdf <- df_discovery2 %>%
+      mdf <- df_discovery2 |>
         dplyr::filter(survey == TRUE)
     } else {
       mdf <- df_discovery2
     }
-    dd <- mdf %>% 
-      dplyr::filter(plotGroup == x) %>% 
+    dd <- mdf |> 
+      dplyr::filter(plotGroup == x) |> 
       mutate(
         survey = factor(survey, levels = c(FALSE, TRUE)),
         species = factor(species, levels = unique(.$species)),
-      ) %>% 
+      ) |> 
       arrange(date, survey, species)
     
     if(x == "Evening") {
@@ -239,7 +239,7 @@ for(surveyOnly in c(TRUE, FALSE)) {
       speciesColors_modified <- speciesColors
     }
     
-    dd %>% 
+    dd |> 
       ggplot() + 
       geom_histogram(
         mapping = aes(x = yday,  alpha = survey, fill = species),
@@ -284,13 +284,13 @@ for(surveyOnly in c(TRUE, FALSE)) {
       )
   })
   if(surveyOnly == TRUE) {
-    patchwork::wrap_plots(p_yday_species_list, axis_titles = "collect") %>% 
+    patchwork::wrap_plots(p_yday_species_list, axis_titles = "collect") |> 
       saveRDS(., "tmp/p_yday_species2.rds")
     
     saveRDS(p_yday_species_list, file = "tmp/p_yday_species_list.rds")
     
   } else {
-    patchwork::wrap_plots(p_yday_species_list, axis_titles = "collect") %>% 
+    patchwork::wrap_plots(p_yday_species_list, axis_titles = "collect") |> 
       ggsave(., filename = "figs/survey_with_incidental_counts.png", dpi = 600)
   }
   
@@ -299,8 +299,8 @@ for(surveyOnly in c(TRUE, FALSE)) {
 
 # Cardinal direction of discovery plots/summaries -----
 
-df_discovery2 %>% 
-  dplyr::filter(!is.na(Building_side), survey == TRUE) %>% 
+df_discovery2 |> 
+  dplyr::filter(!is.na(Building_side), survey == TRUE) |> 
   ggplot() +
   aes(x = Building_side) +
   geom_bar() +
@@ -310,40 +310,40 @@ df_discovery2 %>%
   coord_polar(start = -pi/4)
 
 
-df_discovery2 %>% 
+df_discovery2 |> 
   mutate(Building_side_general = case_when(
     Building_side %in% c("N", "S") ~ "N/S",
     Building_side %in% c("E", "W") ~ "E/W"
     )
-  ) %>% 
-  dplyr::filter(!is.na(Building_side), survey == TRUE) %>% 
-  count(species, Building_side_general) %>% 
+  ) |> 
+  dplyr::filter(!is.na(Building_side), survey == TRUE) |> 
+  count(species, Building_side_general) |> 
   dplyr::mutate(prop = round(n/sum(n)*100), .by = c("species"))
 
 
-df_discovery2 %>%
+df_discovery2 |>
   mutate(Building_side_general = case_when(
     Building_side %in% c("N", "S") ~ "N/S",
     Building_side %in% c("E", "W") ~ "E/W"
-  )) %>%
-  dplyr::filter(!is.na(Building_side), survey == TRUE) %>%
-  count(Building_side_general) %>%
+  )) |>
+  dplyr::filter(!is.na(Building_side), survey == TRUE) |>
+  count(Building_side_general) |>
   dplyr::mutate(prop = round(n / sum(n) * 100))
 
-df_discovery2 %>% 
-  dplyr::filter(!is.na(Building_side), survey == TRUE) %>% 
-  count(season, Building_side_general) %>% 
+df_discovery2 |> 
+  dplyr::filter(!is.na(Building_side), survey == TRUE) |> 
+  count(season, Building_side_general) |> 
   dplyr::mutate(prop = round(n/sum(n)*100), .by = c("season"))
 
 
 # Summaries ================================
 
-df_discovery <- read.csv("data/derived/structured_surveys_bats_discovered.csv") %>% 
+df_discovery <- read.csv("data/derived/structured_surveys_bats_discovered.csv") |> 
   mutate(date = as_date(date))
-sd <- read.csv("data/derived/structured_surveys_schedule.csv") %>% 
+sd <- read.csv("data/derived/structured_surveys_schedule.csv") |> 
   mutate(date = as_date(date))
 
-df_discovery_survey <- left_join(df_discovery, sd) %>% 
+df_discovery_survey <- left_join(df_discovery, sd) |> 
   dplyr::filter(survey == TRUE)
 
 # Bats discovered:
@@ -353,16 +353,16 @@ nrow(df_discovery_survey)
 sum(sd$survey)
 
 # How many bats found alive:
-df_discovery_survey %>% 
-  dplyr::filter(!id %in% c(106, 41) ) %>% 
+df_discovery_survey |> 
+  dplyr::filter(!id %in% c(106, 41) ) |> 
   count(Status)
 
 # How many bats of each species?
-df_discovery_survey %>% 
-  count(species) %>% arrange(desc(n))
+df_discovery_survey |> 
+  count(species) |> arrange(desc(n))
 
 # How many bats found in which season.
-df_discovery2 %>% 
-  dplyr::filter(survey == TRUE) %>% 
-  count(season) %>% mutate(prop = n / sum(n)*100)
+df_discovery2 |> 
+  dplyr::filter(survey == TRUE) |> 
+  count(season) |> mutate(prop = n / sum(n)*100)
 

@@ -58,8 +58,8 @@ pts_sf        <- st_as_sf(as.data.frame(points), coords = c("longitude", "latitu
                           crs = proj.wgs84, remove = FALSE)
 collisions_sf <- pts_sf[pts_sf$used == 1, ]
 background_sf <- pts_sf[pts_sf$used == 0, ]
-background_region <- collisions_sf %>%
-  st_buffer(dist = 100e3) %>%
+background_region <- collisions_sf |>
+  st_buffer(dist = 100e3) |>
   st_union()
 background_region <- st_sf(geometry = background_region)
 
@@ -174,7 +174,8 @@ if (exists("stations")) {
     pt_lon  = radar_crd[, 1], pt_lat = radar_crd[, 2],
     st_lon  = stations$lon[radar_near], st_lat = stations$lat[radar_near],
     dist_km = as.numeric(st_distance(pts_sf, stations[radar_near, ], by_element = TRUE)) / 1000
-  ) %>% filter(dist_km < 200)
+  ) |> 
+    filter(dist_km < 200)
   (p_station_radar <- ggplot() +
     geom_sf(data = ne_countries(scale = "medium", continent = "North America", returnclass = "sf"),
             fill = "grey97", colour = "grey80", linewidth = 0.2) +
@@ -197,7 +198,7 @@ if (exists("stations")) {
 # pulled with ne_download() and cached to tmp/. State lines are 1:10m because the
 # 1:50m layer omits Mexico's states. South America is included so the northern part
 # that falls in frame gets its land, borders, and admin-1 lines (coord_sf clips the rest).
-na_land <- ne_countries(scale = "medium", returnclass = "sf") %>%
+na_land <- ne_countries(scale = "medium", returnclass = "sf") |>
   filter(continent %in% c("North America", "South America"))
 if (!file.exists("tmp/ne_state_lines_10m.rds")) {
   saveRDS(ne_download(scale = 10, type = "admin_1_states_provinces_lines",
@@ -251,7 +252,7 @@ traffic_epred <- posterior_epred(m_useavail_radar_both, newdata = traffic_grid)
 ceData <- list(
   building_height = ce$building_height,
   yday = ce$yday,
-  traffic = traffic_grid %>%
+  traffic = traffic_grid |>
     mutate(estimate__ = colMeans(traffic_epred),
            lower__ = apply(traffic_epred, 2, quantile, 0.025),
            upper__ = apply(traffic_epred, 2, quantile, 0.975))
@@ -294,7 +295,7 @@ cePanel <- function(v, logx = FALSE, dat = NULL, y_accuracy = NULL) {
 }
 
 ## Raw use-vs-available contrasts ----
-contrast_data <- radar_data %>%
+contrast_data <- radar_data |>
   mutate(sample = factor(used, levels = c(1, 0),
                          labels = c("collision site", "background (available)")))
 contrastPanel <- function(x, xlab, logx = FALSE) {

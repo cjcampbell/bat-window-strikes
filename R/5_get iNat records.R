@@ -3,7 +3,7 @@ library(rinat)
 library(readxl)
 # Chiroptera tax ID: 40268
 
-all <- read_excel("data/tidy 6-2-2025 iNat bat collision Records sorted.xlsx") %>% 
+all <- read_excel("data/tidy 6-2-2025 iNat bat collision Records sorted.xlsx") |> 
   dplyr::mutate(
     id = case_when(id == "112964491a" ~ "112964491", TRUE ~ id),
     id = as.integer(id),
@@ -117,10 +117,10 @@ for(i in 1:nrow(all)) {
 
 iNatProjectsToCheck_df <- fread(iNatProjectsToCheck)
 
-projectsWithBats <- iNatProjectsToCheck_df %>% 
-  dplyr::select(projectID, projectTitle) %>% 
-  distinct() %>% 
-  arrange(projectTitle) %>% 
+projectsWithBats <- iNatProjectsToCheck_df |> 
+  dplyr::select(projectID, projectTitle) |> 
+  distinct() |> 
+  arrange(projectTitle) |> 
   dplyr::filter(
     grepl("Collision", projectTitle) |
       grepl("collision", projectTitle) |
@@ -131,7 +131,7 @@ projectsWithBats <- iNatProjectsToCheck_df %>%
       grepl("Bird Strikes", projectTitle) 
   )
 
-projNotes <- read_excel("data/Current 6-2-2025 iNat bat collision Records sorted.xlsx", sheet = 2) %>% 
+projNotes <- read_excel("data/Current 6-2-2025 iNat bat collision Records sorted.xlsx", sheet = 2) |> 
   dplyr::mutate(slug = gsub("https://www.inaturalist.org/projects/", "", url))
 
 projects2Lookup <- unique(c(projectsWithBats$projectID, projNotes$slug))
@@ -201,21 +201,21 @@ df0 <- c("data/iNat downloads/observations_from_our_searches.csv",
   "data/iNat downloads/observations_from_project_searches.csv",
   "data/iNat downloads/observations_from_fields_searches.csv",
   "data/iNat downloads/observations_from_query_searches.csv",
-  "data/iNat downloads/iNatObsFile.csv") %>% 
+  "data/iNat downloads/iNatObsFile.csv") |> 
   lapply(function(x) {
-    read.csv(x) %>% 
+    read.csv(x) |> 
       distinct()
-  }) %>% 
-  reduce(full_join) %>% 
-  full_join(all) %>% 
+  }) |> 
+  reduce(full_join) |> 
+  full_join(all) |> 
   dplyr::select(
     id, scientific_name, datetime, place_guess, everything()
   )
 
 # Tidy:
-df <- df0 %>% 
-  distinct %>% 
-  group_by(id) %>% 
+df <- df0 |> 
+  distinct |> 
+  group_by(id) |> 
   summarise(
     scientific_name = max(scientific_name,na.rm = T),
     datetime = max(datetime,na.rm = T),
@@ -293,12 +293,12 @@ df <- df0 %>%
     `Dead?` = max(`Dead?`,na.rm = T),
     `screener_1_notes` = max(screener_1_notes,na.rm = T),
     `screener_2_notes` = max(`screener_2_notes`,na.rm = T),
-  ) %>% 
+  ) |> 
   dplyr::filter(
     !is.na(id),
     # Remove a user's observations:
    #  user_login != "redtail5"
-    ) %>% 
+    ) |> 
   arrange(id)
 
 fwrite(df, "data/iNat_observations_tidy.csv", row.names = F)
@@ -307,10 +307,10 @@ fwrite(df, "data/iNat_observations_tidy.csv", row.names = F)
 
 previousCheckedFile <- "data/iNat_observations_tidy_manualChecks_20250711.csv"
 if(file.exists(previousCheckedFile)) {
-  df_checked <- fread(previousCheckedFile) %>% 
+  df_checked <- fread(previousCheckedFile) |> 
     dplyr::select(id, `CJ manual check`, `CJ notes`)
-  left_join(df, df_checked) %>% 
-    dplyr::select(id, `CJ manual check`, `CJ notes`, everything()) %>% 
+  left_join(df, df_checked) |> 
+    dplyr::select(id, `CJ manual check`, `CJ notes`, everything()) |> 
     fwrite("data/iNat_observations_tidy_withChecks.csv", row.names = F)
 }
 
@@ -319,13 +319,13 @@ if(file.exists(previousCheckedFile)) {
 
 library("taxize")
 
-df_tax <- fread("data/iNat_observations_tidy.csv") %>% 
-  dplyr::select(scientific_name, taxon_id) %>% 
+df_tax <- fread("data/iNat_observations_tidy.csv") |> 
+  dplyr::select(scientific_name, taxon_id) |> 
   distinct
 
 names2Check <- unique(df_tax$scientific_name)
 
-# gna_data_sources() %>% View # Options for data sources
+# gna_data_sources() |> View # Options for data sources
 names_ver <- gna_verifier(
   names2Check)
 fwrite(names_ver, file = "data/iNat_observations_taxNames.csv", row.names = F)
@@ -355,8 +355,8 @@ for(searchName in names_ver$matchedCanonicalSimple) {
   # Check download worked.
   if(names(o) == searchName & nrow(o[[1]]) != 0) {
     # Write outputs
-    o_df <- as.data.frame(o[[1]]) %>% 
-      # pivot_wider(names_from = rank, values_from = c(name, id), names_glue = "{rank}_{.value}") %>% 
+    o_df <- as.data.frame(o[[1]]) |> 
+      # pivot_wider(names_from = rank, values_from = c(name, id), names_glue = "{rank}_{.value}") |> 
       mutate(db = attr(o, "db"), search = searchName)
     fwrite(o_df, taxPath, append = T, row.names = F)
     Sys.sleep(1)
@@ -365,15 +365,15 @@ for(searchName in names_ver$matchedCanonicalSimple) {
   }
 }
 
-taxInfo <- fread("data/iNat_observations_taxInfo.csv") %>%
-  distinct %>%
+taxInfo <- fread("data/iNat_observations_taxInfo.csv") |>
+  distinct |>
   pivot_wider(
     names_from = rank,
     values_from = c(name, id),
     names_glue = "{rank}_{.value}"
-  ) %>%
-  dplyr::select(search, db, ends_with("_name")) %>%
-  dplyr::filter(!is.na(kingdom_name), phylum_name == "Chordata") %>%
+  ) |>
+  dplyr::select(search, db, ends_with("_name")) |>
+  dplyr::filter(!is.na(kingdom_name), phylum_name == "Chordata") |>
   dplyr::select(
     c(
       "search",

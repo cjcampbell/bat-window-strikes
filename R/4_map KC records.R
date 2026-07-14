@@ -28,24 +28,24 @@ if(!file.exists("tmp/downloads.redtail5.csv")) {
 # 39.110600348029564&nelng=-94.49173146991824&page=2&swlat=39.07396161025084&swlng=-94.65489560871218
 
 # Retain only those points observed on surveyed dates.
-sd <- read.csv("data/derived/structured_surveys_schedule.csv") %>% 
-  dplyr::filter(survey == TRUE) %>% 
-  dplyr::select(date) %>% 
+sd <- read.csv("data/derived/structured_surveys_schedule.csv") |> 
+  dplyr::filter(survey == TRUE) |> 
+  dplyr::select(date) |> 
   mutate(date = date(date))
 
 
-df <- read.csv("tmp/downloads.redtail5.csv") %>% 
+df <- read.csv("tmp/downloads.redtail5.csv") |> 
   dplyr::filter(
     latitude <= 39.110600348029564, latitude >= 39.07396161025084,
     longitude <= -94.56, longitude >= -94.6
-    ) %>% 
+    ) |> 
   mutate(
     datetime = as_datetime(datetime),
     date = date(datetime)
-  ) %>% 
+  ) |> 
   inner_join(sd)
 
-df %>% 
+df |> 
   ggplot() +
   aes(x = longitude, y = latitude) +
   geom_point() +
@@ -62,38 +62,38 @@ if(!file.exists("tmp/KC_osm.RData")) {
   available_tags(feature = "building")
   
   
-  KC_water <- opq(KC_bb) %>% 
-    add_osm_feature(key = "water") %>%
+  KC_water <- opq(KC_bb) |> 
+    add_osm_feature(key = "water") |>
     osmdata_sf()
   
-  KC_highways <- KC_bb %>%
-    opq() %>%
-    add_osm_feature(key = "highway") %>%
+  KC_highways <- KC_bb |>
+    opq() |>
+    add_osm_feature(key = "highway") |>
     osmdata_sf()
-  KC_highways$osm_lines$lanes %>% unique
+  KC_highways$osm_lines$lanes |> unique
   
-  KC_highways.lines <- KC_highways$osm_lines %>% 
+  KC_highways.lines <- KC_highways$osm_lines |> 
     dplyr::mutate(
       lanes = as.numeric(lanes),
       lanes = case_when(lanes == 31 ~ 1, is.na(lanes) ~ 1, TRUE ~ lanes)
     )
   
-  KC_buildings <-  KC_bb %>%
-    opq() %>%
-    add_osm_feature(key = "building") %>% 
+  KC_buildings <-  KC_bb |>
+    opq() |>
+    add_osm_feature(key = "building") |> 
     osmdata_sf()
   
   save(KC_bb, KC_water, KC_highways, KC_highways.lines, KC_buildings, 
        file = "tmp/KC_osm_highRes.RData")
   
-  ext_small <- st_bbox(c(xmin = -94.56, xmax = -94.6, ymin = 39.08, ymax = 39.108)) %>% 
+  ext_small <- st_bbox(c(xmin = -94.56, xmax = -94.6, ymin = 39.08, ymax = 39.108)) |> 
     st_as_sfc()
 
-  KC_highways.lines_small <- KC_highways.lines %>% 
-    st_crop(ext_small) %>% 
+  KC_highways.lines_small <- KC_highways.lines |> 
+    st_crop(ext_small) |> 
     st_simplify(dTolerance = 0.1)
-  KC_buildings_small <- KC_buildings$osm_polygons %>% 
-    st_crop(ext_small) %>% 
+  KC_buildings_small <- KC_buildings$osm_polygons |> 
+    st_crop(ext_small) |> 
     st_simplify(dTolerance = 0.1)
   
   save(KC_highways.lines_small, KC_buildings_small, 
@@ -157,8 +157,8 @@ arrow <- list(
   )
 )
 
-myBox_small <- st_bbox(c(xmin = -94.595-0.002, xmax = -94.57+0.0015, ymin = 39.08+0.0028, ymax = 39.108), crs =  proj.wgs84) %>% st_as_sfc() %>% st_as_sf()
-myBox_medium <- st_bbox(c(xmin = -94.595-0.75, xmax = -94.57+0.75, ymin = 39.095-0.5, ymax = 39.108+0.55), crs =  proj.wgs84) %>% st_as_sfc() %>% st_as_sf()
+myBox_small <- st_bbox(c(xmin = -94.595-0.002, xmax = -94.57+0.0015, ymin = 39.08+0.0028, ymax = 39.108), crs =  proj.wgs84) |> st_as_sfc() |> st_as_sf()
+myBox_medium <- st_bbox(c(xmin = -94.595-0.75, xmax = -94.57+0.75, ymin = 39.095-0.5, ymax = 39.108+0.55), crs =  proj.wgs84) |> st_as_sfc() |> st_as_sf()
 
 states <- usmap::us_map(exclude = c("Alaska", "Hawaii", "Puerto Rico"))
 
@@ -247,16 +247,16 @@ nlcd_crop_medium <- crop(nlcd0, project(terra::vect(myBox_medium),crs(nlcd0)))
 myBox_medium_acea <- st_transform(myBox_medium, st_crs(nlcd_crop_medium))
 
 geodata::geodata_path(largeFileStoragePath)
-usa_48 <- geodata::gadm(country = "USA", path = "../../- Missions & Programs/Research & Development/Data Products/") %>% 
-  st_as_sf() %>% 
-  dplyr::filter(!NAME_1 %in% c("Alaska", "Hawaii", "Puerto Rico")) %>% 
+usa_48 <- geodata::gadm(country = "USA", path = "../../- Missions & Programs/Research & Development/Data Products/") |> 
+  st_as_sf() |> 
+  dplyr::filter(!NAME_1 %in% c("Alaska", "Hawaii", "Puerto Rico")) |> 
   vect()
 
 # Plotting info for NLCD
 colorBreaks <- FedData::nlcd_colors()$Class
-colorBreaks <- colorBreaks %>% 
-  gsub("Pasture/Hay", "Hay/Pasture", .) %>% 
-  gsub("Developed High Intensity", "Developed, High Intensity", .)%>% 
+colorBreaks <- colorBreaks |> 
+  gsub("Pasture/Hay", "Hay/Pasture", .) |> 
+  gsub("Developed High Intensity", "Developed, High Intensity", .)|> 
   gsub("Herbaceous", "Sedge/Herbaceous", .)
 colorBreaks <- c(colorBreaks, "Herbaceous","Emergent Herbaceous Wetlands","","Barren Land", "Perennial Snow/Ice", "Unclassified")
 nlcdCols <- c(
@@ -301,7 +301,7 @@ myLegend <-
     theme(
       legend.title = element_text(angle = 90, hjust = 0.5)
       )
-  }%>% 
+  }|> 
   ggpubr::get_legend()
 ggsave(myLegend, filename = "figs/map_nlcd_legend.png", width = 6.5*1.5,  height = 1.5*1.5, dpi = 300)
 ggsave(myLegend, filename = "figs/map_nlcd_legend.svg", width = 6.5*1.5,  height = 1.5*1.5)

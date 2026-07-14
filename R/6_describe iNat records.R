@@ -12,47 +12,47 @@ source("R/0_funs.R")
 
 
 taxTree <- fread("data/iNat_observations_taxTree.csv")
-world <- ne_countries(scale = "medium", returnclass = "sf") %>% 
-  sf::st_transform(myproj) %>% 
+world <- ne_countries(scale = "medium", returnclass = "sf") |> 
+  sf::st_transform(myproj) |> 
   dplyr::select(admin, adm0_a3, continent)
-mygrid <- sf::st_make_grid(world, cellsize = 500) %>%
-  st_as_sf() %>% 
+mygrid <- sf::st_make_grid(world, cellsize = 500) |>
+  st_as_sf() |> 
   dplyr::mutate(grid_id = row_number())
 
 
 # Load manually-checked data
-df <- read.csv("data/iNat_observations_tidy_manualChecks.csv") %>% 
-  st_as_sf(coords = c("longitude", "latitude"), crs = proj.wgs84, remove = F) %>% 
-  st_transform(myproj) %>% 
-  dplyr::filter(CJ.manual.check == "y") %>% 
+df <- read.csv("data/iNat_observations_tidy_manualChecks.csv") |> 
+  st_as_sf(coords = c("longitude", "latitude"), crs = proj.wgs84, remove = F) |> 
+  st_transform(myproj) |> 
+  dplyr::filter(CJ.manual.check == "y") |> 
   mutate(
     datetime.POSIX = as.POSIXct(datetime),
     datetime.date = as_date(datetime.POSIX),
     yday = yday(datetime.date)
-  ) %>% 
+  ) |> 
   # Join with taxonomy data.
-  left_join(., taxTree, by = c("scientific_name" = "search")) %>% 
+  left_join(., taxTree, by = c("scientific_name" = "search")) |> 
   # Unite with spatial data
   st_join(., world)
 
 
 # Create table with observation IDs and license info for retained obs. ------
 # This is intended for sharing without violating license agreements.
-df_with_info <- df  %>% 
-  as.data.frame() %>% 
+df_with_info <- df  |> 
+  as.data.frame() |> 
   dplyr::select(
     id, url, notes = CJ.notes, scientific_name, common_name, description, user_login, observed_on, license, family_name, adm0_a3, continent, 
   )
 
-df_restrictiveLicenses <- df_with_info %>% 
-  dplyr::filter(license == "") %>% 
-  dplyr::select(id, url, notes, family_name, adm0_a3, continent) %>% 
+df_restrictiveLicenses <- df_with_info |> 
+  dplyr::filter(license == "") |> 
+  dplyr::select(id, url, notes, family_name, adm0_a3, continent) |> 
   mutate(
     notes = paste0(notes, ". All rights reserved license"),
     notes = case_when(notes == ". All rights reserved license" ~ "All rights reserved license", TRUE ~ notes)
   )
 
-df_otherLicenses <-  df_with_info %>% 
+df_otherLicenses <-  df_with_info |> 
   dplyr::filter(license != "") 
 
 df_tidy_licenses <- full_join(df_otherLicenses, df_restrictiveLicenses)
@@ -60,16 +60,16 @@ write.csv(df_tidy_licenses, "data/derived/iNaturalist records.csv", row.names = 
 
 
 ## Correct  spatial data -----
-df %>% dplyr::filter(is.na(continent))
+df |> dplyr::filter(is.na(continent))
 # A handful don't overlap countries (probably due to obscured coordinates near the coast).
 # To resolve this, find the nearest country and replace NA's.
 for(i in which(is.na(df$continent)) ) {
   
-  workingDF <- df[i,] %>% 
-    st_distance(world) %>% 
-    which.min() %>% 
-    world[.,] %>% 
-    as.data.frame() %>% 
+  workingDF <- df[i,] |> 
+    st_distance(world) |> 
+    which.min() |> 
+    world[.,] |> 
+    as.data.frame() |> 
     dplyr::select(admin, adm0_a3, continent)
   
   df$admin[i]     <- workingDF$admin
@@ -83,14 +83,14 @@ for(i in which(is.na(df$continent)) ) {
 ## Prepare to map ----
 df_grid <- st_join(df, mygrid)
 
-df_grid_count_grid <- df_grid %>% 
-  count(grid_id) %>% 
-  as.data.frame() %>% 
-  dplyr::select(-geometry) %>% 
-  inner_join(mygrid) %>% 
+df_grid_count_grid <- df_grid |> 
+  count(grid_id) |> 
+  as.data.frame() |> 
+  dplyr::select(-geometry) |> 
+  inner_join(mygrid) |> 
   st_as_sf()
 
-df_grid_count <- df_grid_count_grid %>% 
+df_grid_count <- df_grid_count_grid |> 
   st_centroid()
 
 ## Exploratory maps -----
@@ -130,17 +130,17 @@ iNat_map_grid_circle <- ggplot() +
 ggsave(iNat_map_grid_circle, filename =  "figs/iNat_map_grid_circle.png", dpi = 600)
 
 ## Map by family -----
-df_grid_family <- df_grid %>% 
-  count(grid_id, family_name) %>% 
-  as.data.frame() %>% 
-  dplyr::select(-geometry) %>% 
-  inner_join(mygrid) %>% 
+df_grid_family <- df_grid |> 
+  count(grid_id, family_name) |> 
+  as.data.frame() |> 
+  dplyr::select(-geometry) |> 
+  inner_join(mygrid) |> 
   st_as_sf()
 
-df_grid_count_family <- df_grid_family %>% 
+df_grid_count_family <- df_grid_family |> 
   st_centroid()
 
-df_grid_count_family %>% 
+df_grid_count_family |> 
   ggplot() +
   geom_sf(world, mapping = aes(), fill = NA) +
   geom_sf(mapping = aes(size = n, color = family_name), alpha = 0.5) +
@@ -207,7 +207,7 @@ ggsave("figs/iNaturalist_records_map_by_family.png", dpi = 600, width = 10, heig
 
 # Timing of observations by continent --------
 
-df_grid %>% 
+df_grid |> 
   ggplot() +
   geom_histogram(aes(x = yday), binwidth = 7) +
   scale_y_continuous(
@@ -227,7 +227,7 @@ ggsave("figs/SI_iNatRecords_by_yday.png", dpi = 600, width = 8)
 
 
 
-df_grid %>% 
+df_grid |> 
   ggplot() +
   geom_histogram(aes(x = yday, fill = quality_grade)) +
   facet_wrap(~continent +scientific_name, axes = "all", scales = "free_y") +
@@ -245,10 +245,10 @@ df_grid %>%
   )
 
 
-df_grid %>% 
-  count(continent, scientific_name) %>% 
-  arrange(desc(n)) %>% 
-  mutate(scientific_name=factor(scientific_name, levels = unique(.$scientific_name))) %>% 
+df_grid |> 
+  count(continent, scientific_name) |> 
+  arrange(desc(n)) |> 
+  mutate(scientific_name=factor(scientific_name, levels = unique(.$scientific_name))) |> 
   ggplot() +
   geom_col(aes(x = scientific_name, y = n)) +
   facet_wrap(~continent, axes = "all_x", scales = "free", space = "free_x") +
@@ -278,7 +278,7 @@ datelabs <-  month.abb
 # Reclassify to match taxonomic authority.
 # Classify non-research grade observations as "other/unknown".
 
-dddd <- df_NoAm %>%
+dddd <- df_NoAm |>
   mutate(
     species_rg = case_when(
       species_name != "" & quality_grade == "research" ~ species_name,
@@ -320,9 +320,9 @@ iNaturalist_NoAm_timing_list <- lapply(c(
       ymax <- 15  
     }
     
-    dddd %>% 
-      dplyr::filter(group == x) %>% 
-      mutate(species_rg = factor(species_rg)) %>% 
+    dddd |> 
+      dplyr::filter(group == x) |> 
+      mutate(species_rg = factor(species_rg)) |> 
       ggplot() +
       geom_histogram(aes(x = yday, fill = species_rg), binwidth = 14) +
       scale_fill_manual(
@@ -362,7 +362,7 @@ iNaturalist_NoAm_timing2
 
 ## Summarize taxonomy ----------
 
-df_NoAm_working <- df_NoAm %>%
+df_NoAm_working <- df_NoAm |>
   mutate(
     family_name = case_when(family_name == "" ~ as.character(NA), TRUE ~ family_name),
     genus_name = case_when(genus_name == "" ~ as.character(NA), TRUE ~ genus_name),
@@ -376,7 +376,7 @@ df_NoAm_working <- df_NoAm %>%
   )
 
 
-ddd <- df_NoAm_working %>%
+ddd <- df_NoAm_working |>
   mutate(
     species_rg = case_when(
       species_name != "" & quality_grade == "research" ~ species_name,
@@ -393,12 +393,12 @@ ddd <- df_NoAm_working %>%
         species_rg ==  "Other/unknown" ~  "Other/unknown",
         TRUE ~ paste0("<i>", species_rg, "</i>")
       )
-  ) %>%
-  count(species_rg, species_rg_lab) %>%
+  ) |>
+  count(species_rg, species_rg_lab) |>
   arrange(desc(n))
 
-iNaturalist_record_by_spp <- ddd %>%
-  mutate(species_rg_lab = factor(species_rg_lab, levels = unique(.$species_rg_lab))) %>%
+iNaturalist_record_by_spp <- ddd |>
+  mutate(species_rg_lab = factor(species_rg_lab, levels = unique(.$species_rg_lab))) |>
   ggplot() +
   geom_col(aes(x = species_rg_lab, y = n, fill = species_rg)) +
   geom_text(aes(x = species_rg_lab, y = n, label = n), vjust = -0.25, color = "grey50", size = 2) +
@@ -417,8 +417,8 @@ iNaturalist_record_by_spp <- ddd %>%
 ggsave(iNaturalist_record_by_spp, filename = "figs/iNaturalist_record_by_spp.png")
 
 
-ddd_bygroup <- ddd %>%
-  as.data.frame %>% 
+ddd_bygroup <- ddd |>
+  as.data.frame |> 
   mutate(
     group = case_when(
       species_rg %in% c(
@@ -429,8 +429,8 @@ ddd_bygroup <- ddd %>%
       TRUE ~ "Other"
       ),
     species = case_when(group == "Other" ~ group, TRUE ~ species_rg)
-    ) %>% 
-  dplyr::summarise(n = sum(n), .by = c(`group`, `species`)) %>% 
+    ) |> 
+  dplyr::summarise(n = sum(n), .by = c(`group`, `species`)) |> 
   mutate(
     group = factor(group, levels = rev(c(
       "<i>Lasiurus borealis</i>",
@@ -440,13 +440,13 @@ ddd_bygroup <- ddd %>%
     )))
   )
 
-ddd_Others <- ddd %>%
+ddd_Others <- ddd |>
   dplyr::filter(
     !species_rg %in% c(
       "Lasiurus borealis",
       "Lasionycteris noctivagans",
       "Eptesicus fuscus"
-  )) %>% 
+  )) |> 
   mutate(
     species_rg_lab = case_when(species_rg_lab == "Other/unknown" ~ "Unknown", TRUE ~ species_rg_lab),
     species_rg_lab2 = paste0(species_rg_lab, ": ", n),
@@ -498,22 +498,22 @@ ddd_Others <- ddd %>%
 
 # Time of day exploration ----------
 
-df_time <- df_grid %>% 
-  separate(datetime, into = c("date", "time", "tz"), remove = F, sep = " ") %>% 
+df_time <- df_grid |> 
+  separate(datetime, into = c("date", "time", "tz"), remove = F, sep = " ") |> 
   dplyr::mutate(
     hour = as.numeric(word(time, 1,1,sep=":")),
     min  = as.numeric(word(time, 2,2,sep=":")),
     sec  = as.numeric(word(time, 3,3,sep=":"))
-  ) %>% 
+  ) |> 
   # remove 00:00:00 times.
   dplyr::filter(
     hour != 0 | min != 0 | sec != 0
   )
 
-df_time %>% 
+df_time |> 
   count(continent, hour >= 5 & hour <= 10)
 
-(p_timeOfDay <- df_time %>% 
+(p_timeOfDay <- df_time |> 
   ggplot() +
   geom_bar(aes(x= hour, fill = continent)) +
   # scale_fill_viridis_d(option = "turbo", begin = 0, end = 0.5) +
@@ -574,25 +574,25 @@ ggsave(f5_combo2, filename = "figs/f5_combo2.svg", width = 9, height = 6)
 
 
 # Tables + summaries ------
-df %>% 
-  as.data.frame %>% 
-  count(admin) %>% 
+df |> 
+  as.data.frame |> 
+  count(admin) |> 
   arrange(desc(n))
-df %>% 
-  as.data.frame %>% 
+df |> 
+  as.data.frame |> 
   count(continent) 
 
-df %>% 
-  as.data.frame() %>% 
-  dplyr::filter(quality_grade == "research",species_name!="") %>% 
-  count(quality_grade, family_name, species_name) %>% 
+df |> 
+  as.data.frame() |> 
+  dplyr::filter(quality_grade == "research",species_name!="") |> 
+  count(quality_grade, family_name, species_name) |> 
   arrange(desc(n))
 
-df %>% 
-  as.data.frame() %>% 
-  dplyr::filter(continent == "North America") %>% 
+df |> 
+  as.data.frame() |> 
+  dplyr::filter(continent == "North America") |> 
   mutate(
     lon_cut = cut(longitude, breaks = c(-Inf, -100, Inf)),
     lat_cut = cut(latitude, breaks = c(-Inf, 24, Inf))
-  ) %>% 
+  ) |> 
   count(lon_cut, lat_cut)

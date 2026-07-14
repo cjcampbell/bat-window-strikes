@@ -11,29 +11,29 @@ library(lubridate)
 df_discovery <- read_excel(
     "data/Excel data from iNaturalist and cross checked with Lakeside rehab data.xlsx",
     range = "A1:P133"
-  ) %>% 
-  dplyr::rename(date = Date) %>% 
+  ) |> 
+  dplyr::rename(date = Date) |> 
   dplyr::mutate(
     date = as_date(date),
     yday = yday(date),
     id = row_number()
-    ) %>% 
+    ) |> 
   dplyr::filter(!is.na(date))
 
-df_discovery2 <- df_discovery %>% 
-  dplyr::select(id, starts_with("Bldg"),"Blg  C               1201 Walnut", "Other") %>% 
+df_discovery2 <- df_discovery |> 
+  dplyr::select(id, starts_with("Bldg"),"Blg  C               1201 Walnut", "Other") |> 
   pivot_longer(
     cols = c(starts_with("Bldg"), "Blg  C               1201 Walnut",  "Other"),
     names_to = "Building",
     values_to = "Building_side"
-    ) %>% 
-  dplyr::filter(!is.na(Building_side)) %>% 
-  left_join(df_discovery, .) %>% 
-  dplyr::select(-starts_with("Bldg"), -starts_with("Blg"), -"Other") %>% 
+    ) |> 
+  dplyr::filter(!is.na(Building_side)) |> 
+  left_join(df_discovery, .) |> 
+  dplyr::select(-starts_with("Bldg"), -starts_with("Blg"), -"Other") |> 
   dplyr::rename(
     locality = `Location (Corrections in green text)`,
     species = `Species (Corrections in green text)`
-  ) %>% 
+  ) |> 
   # Cleaning
   dplyr::mutate(
     paired = case_when(grepl("/2", Building_side) ~ "Y", TRUE ~ "N"),
@@ -83,7 +83,7 @@ df_discovery2 <- df_discovery %>%
     ),
     Building_side = factor(Building_side, levels = c("N", "S", "E", "W")),
     plotGroup = case_when(species %in% c("Big brown", "Eastern Red", "Evening") ~ species, TRUE ~ "Others")
-  ) %>% 
+  ) |> 
   dplyr::select(
     id, 
     date, yday,
@@ -96,32 +96,32 @@ df_discovery2 <- df_discovery %>%
 # reported by community members for rescue, are retained in the output. An earlier
 # version of this analysis omitted them at this stage; that filter is 
 # preserved here for reference:
-# %>% dplyr::filter(!id %in% c(106, 41))
+# |> dplyr::filter(!id %in% c(106, 41))
 
 write.csv(df_discovery2, "data/derived/structured_surveys_bats_discovered.csv", row.names = F)
 
 
 # Load survey data data ---------------------------------------------------
 
-sd1 <- read_excel("data/Survey dates corrected.xlsx", sheet = "Sheet1_tidy") %>% 
-  dplyr::rename(year = 1) %>% 
-  pivot_longer(cols = -1, names_to = "calDate", values_to = "survey") %>% 
-  dplyr::filter(!is.na(survey)) %>% 
+sd1 <- read_excel("data/Survey dates corrected.xlsx", sheet = "Sheet1_tidy") |> 
+  dplyr::rename(year = 1) |> 
+  pivot_longer(cols = -1, names_to = "calDate", values_to = "survey") |> 
+  dplyr::filter(!is.na(survey)) |> 
   dplyr::mutate(
     survey = TRUE,
     date = mdy(paste(calDate, year))
-    ) %>% 
+    ) |> 
   dplyr::select(-calDate, -year)
 
 # There were some dates missing from the survey dates spreadsheet. Infer them 
 # using observation data.
-# sd <- rbind(sd, data.frame(survey = TRUE, date = (unique(df_discovery2$date))[!(unique(df_discovery2$date) %in% sd$date)])) %>%
+# sd <- rbind(sd, data.frame(survey = TRUE, date = (unique(df_discovery2$date))[!(unique(df_discovery2$date) %in% sd$date)])) |>
 #   arrange(date)
 
 fullDates <- data.frame(date = seq.Date(ymd("2019-09-01"), ymd("2024-12-31"), by = "1 days" ))
-sd <- full_join(sd1, fullDates) %>% 
-  arrange(date) %>% 
-  replace_na(list(survey = FALSE)) %>% 
+sd <- full_join(sd1, fullDates) |> 
+  arrange(date) |> 
+  replace_na(list(survey = FALSE)) |> 
   dplyr::mutate(
     yday = yday(date),
     yday_bin7 = cut(yday, breaks = seq(1,365,by=7))
@@ -129,9 +129,9 @@ sd <- full_join(sd1, fullDates) %>%
 
 write.csv(sd, "data/derived/structured_surveys_schedule.csv", row.names = F)
 
-sd_yday_count <- sd %>% 
-  group_by(yday_bin7) %>% 
-  dplyr::summarise(n_surveys = sum(survey)) %>% 
+sd_yday_count <- sd |> 
+  group_by(yday_bin7) |> 
+  dplyr::summarise(n_surveys = sum(survey)) |> 
   dplyr::mutate(
     yday_bin7_lab = as.character(yday_bin7),
     yday = as.numeric(gsub("\\(", "", stringr::word(yday_bin7_lab, 1,1, sep = ","))),

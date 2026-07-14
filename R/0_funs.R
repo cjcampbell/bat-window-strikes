@@ -33,13 +33,13 @@ proj.wgs84 <- "+proj=longlat +datum=WGS84 +no_defs +type=crs"
 myproj     <- "+proj=eqearth +lon_0=0 +datum=WGS84 +units=km +no_defs"
 doy_labels <- format(mdy(monthFirsts), "%b")
 # 
-# dateGrid <- expand.grid(month.abb,c(1, 8, 15, 22, 29),2020) %>% 
+# dateGrid <- expand.grid(month.abb,c(1, 8, 15, 22, 29),2020) |> 
 #   mutate(
 #     date = mdy(paste(Var1, Var2, Var3)),
 #     yday = yday(date),
 #     label = case_when(Var2 == 1 ~ Var1, TRUE ~ "")
-#     ) %>% 
-#   dplyr::filter(!is.na(date)) %>% 
+#     ) |> 
+#   dplyr::filter(!is.na(date)) |> 
 #   arrange(date)
 
 
