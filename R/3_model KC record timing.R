@@ -16,16 +16,18 @@ df_discovery3 <- left_join(sd, df_discovery2) |>
 dat_surv <- df_discovery3 |> 
   count(date, species) |> 
   pivot_wider(names_from = species, values_from = n, names_prefix = "count_") |> 
-  dplyr::select(-`count_NA`) |> 
-  replace(is.na(.), 0) |> 
+  dplyr::select(-`count_NA`) |>
+  # Lambda rather than a "." placeholder: the native pipe has no magrittr dot, and the
+  # piped data is needed twice here (as both the target and the NA index).
+  (\(d) replace(d, is.na(d), 0))() |>
   rowwise() |> 
   mutate(
     count_total_bats = rowSums(across(starts_with("count_"))),
     presence_any_bats = as.numeric(count_total_bats>0),
     yday = yday(date),
     year = year(date)
-  ) |> 
-  ungroup
+  ) |>
+  ungroup()
 
 # Summarize record timing --------------
 
@@ -165,8 +167,10 @@ pred_out <- predict(
   m_abundance_all_poi, 
   probs = c(0.025, 0.25, 0.5, 0.75, 0.975),
   newdata = pred_df
-) |> 
-  cbind(pred_df, .)
+) |>
+  # cbind() takes its arguments via ..., so there is no named slot for the native
+  # pipe's "_" placeholder; a lambda keeps the piped result in the second position.
+  (\(r) cbind(pred_df, r))()
 
 ggplot(pred_out) +
   aes(x = yday) +

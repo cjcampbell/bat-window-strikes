@@ -70,7 +70,7 @@ if(!file.exists("tmp/KC_osm.RData")) {
     opq() |>
     add_osm_feature(key = "highway") |>
     osmdata_sf()
-  KC_highways$osm_lines$lanes |> unique
+  KC_highways$osm_lines$lanes |> unique()
   
   KC_highways.lines <- KC_highways$osm_lines |> 
     dplyr::mutate(
@@ -254,10 +254,10 @@ usa_48 <- geodata::gadm(country = "USA", path = "../../- Missions & Programs/Res
 
 # Plotting info for NLCD
 colorBreaks <- FedData::nlcd_colors()$Class
-colorBreaks <- colorBreaks |> 
-  gsub("Pasture/Hay", "Hay/Pasture", .) |> 
-  gsub("Developed High Intensity", "Developed, High Intensity", .)|> 
-  gsub("Herbaceous", "Sedge/Herbaceous", .)
+colorBreaks <- colorBreaks |>
+  gsub("Pasture/Hay", "Hay/Pasture", x = _) |>
+  gsub("Developed High Intensity", "Developed, High Intensity", x = _) |>
+  gsub("Herbaceous", "Sedge/Herbaceous", x = _)
 colorBreaks <- c(colorBreaks, "Herbaceous","Emergent Herbaceous Wetlands","","Barren Land", "Perennial Snow/Ice", "Unclassified")
 nlcdCols <- c(
   FedData::nlcd_colors()$Color,

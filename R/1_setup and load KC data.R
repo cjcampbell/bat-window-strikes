@@ -28,7 +28,7 @@ df_discovery2 <- df_discovery |>
     values_to = "Building_side"
     ) |> 
   dplyr::filter(!is.na(Building_side)) |> 
-  left_join(df_discovery, .) |> 
+  left_join(x = df_discovery, y = _) |>
   dplyr::select(-starts_with("Bldg"), -starts_with("Blg"), -"Other") |> 
   dplyr::rename(
     locality = `Location (Corrections in green text)`,

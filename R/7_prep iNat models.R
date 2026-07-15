@@ -17,6 +17,7 @@
 # Outputs: data/derived/inat_background.csv               (background draw, cached)
 #          data/derived/inat_background_effort.csv        (effort reference)
 #          data/ALAN/VNL_npp_2024_vcmslcfg_v2_NAcrop.tif  (local ALAN crop, cached)
+#          data/ALAN/alan_glow_log_ll.tif                  (small glow basemap for Fig 5)
 #          data/derived/useavail_points.csv               (analysis-ready table)
 
 
@@ -200,6 +201,22 @@ if (!exists("alan_raster")) {
   names(alan_raster) <- "alan"
 }
 
+# Small glow basemap for the Figure 5 map, cached once. The crop above is ~143M cells
+# -- far too many to plot -- so aggregate 6x (mean) and log1p it here, where the raster
+# work lives, leaving 8_fit to just read this small file. Radiance is clamped at 0
+# (a few cells are slightly negative) and is wildly right-skewed (median 0, p99.9 ~56,
+# peak >16,000), hence the log.
+alan_glow <- "data/ALAN/alan_glow_log_ll.tif"
+if (!file.exists(alan_glow)) {
+  glow <- aggregate(alan_raster, fact = 6, fun = "mean", na.rm = TRUE) |>
+    clamp(lower = 0, values = TRUE) |>
+    log1p()
+  names(glow) <- "radiance"
+  writeRaster(glow, alan_glow, overwrite = TRUE,
+              gdal = c("COMPRESS=DEFLATE", "PREDICTOR=3", "TILED=YES"))
+  cat("wrote glow basemap to", alan_glow, "\n")
+}
+
 # Target-group background ----
 # The "available" set is ~10,000 general iNaturalist animal observations (any
 # quality grade, matching how collisions were retained), representing where and
@@ -321,9 +338,12 @@ if (!file.exists(background_file)) {
     select(any_of(
       c( "id", "url", "user_login", "license", "observed_on", "datetime", "latitude", "longitude", "positional_accuracy", "coordinates_obscured", "quality_grade", "iconic_taxon_name", "download_date" )
     )) |>
-    mutate(download_date = as.character(Sys.Date())) |>
-    slice_sample(n = min(n_background, nrow(.)))
-  
+    mutate(download_date = as.character(Sys.Date()))
+  # Sample down to n_background, or keep the whole pool if it is smaller. Split out of
+  # the pipeline above because the native pipe has no "." placeholder for nrow().
+  background_clean <- background_clean |>
+    slice_sample(n = min(n_background, nrow(background_clean)))
+
   stopifnot("Background download returned no records" = nrow(background_clean) > 0)
   fwrite(background_clean, background_file)
   file.copy("tmp/inat_background_effort.csv", effort_file, overwrite = TRUE)  # freeze effort ref

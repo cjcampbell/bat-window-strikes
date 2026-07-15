@@ -213,9 +213,9 @@ df0 <- c("data/iNat downloads/observations_from_our_searches.csv",
   )
 
 # Tidy:
-df <- df0 |> 
-  distinct |> 
-  group_by(id) |> 
+df <- df0 |>
+  distinct() |>
+  group_by(id) |>
   summarise(
     scientific_name = max(scientific_name,na.rm = T),
     datetime = max(datetime,na.rm = T),
@@ -319,9 +319,9 @@ if(file.exists(previousCheckedFile)) {
 
 library("taxize")
 
-df_tax <- fread("data/iNat_observations_tidy.csv") |> 
-  dplyr::select(scientific_name, taxon_id) |> 
-  distinct
+df_tax <- fread("data/iNat_observations_tidy.csv") |>
+  dplyr::select(scientific_name, taxon_id) |>
+  distinct()
 
 names2Check <- unique(df_tax$scientific_name)
 
@@ -366,7 +366,7 @@ for(searchName in names_ver$matchedCanonicalSimple) {
 }
 
 taxInfo <- fread("data/iNat_observations_taxInfo.csv") |>
-  distinct |>
+  distinct() |>
   pivot_wider(
     names_from = rank,
     values_from = c(name, id),

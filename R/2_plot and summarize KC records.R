@@ -30,7 +30,9 @@ df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv")
       "Evening", "Big brown", "Eastern Red",
       "Silver-haired", "Tricolored", "Vespertilionidae")
     ),
-    plotGroup = factor(plotGroup, levels = arrange(count(., plotGroup), desc(n))$plotGroup),
+    # fct_infreq() == the old factor(levels = arrange(count(., plotGroup), desc(n))):
+    # levels ordered by descending frequency, without needing the magrittr dot.
+    plotGroup = fct_infreq(plotGroup),
     Building_side_general = case_when(
       Building_side %in% c("N", "S") ~ "N/S",
       Building_side %in% c("E", "W") ~ "E/W"
@@ -67,12 +69,12 @@ df_discovery2 <- read.csv("data/derived/structured_surveys_bats_discovered.csv")
     ),
     date = as_date(date)
   ) |> 
-  left_join(., sd)
+  left_join(sd)
 
 df_discovery2 |> 
   count(species) |> 
   arrange(desc(n)) |> 
-  mutate(species = factor(species, levels = unique(.$species))) |> 
+  mutate(species = factor(species, levels = unique(species))) |>
   ggplot() +
   geom_col(aes(x= species, y = n, fill = species)) +
   scale_y_continuous("Number of Kansas City records",
@@ -101,7 +103,7 @@ df_discovery2 |>
      max_x = sum(n), .by = group,
    ) |> 
   mutate(
-    group_lab = factor(group_lab, levels = rev(unique(.$group_lab))),
+    group_lab = factor(group_lab, levels = rev(unique(group_lab))),
     survey = factor(survey),
     text_x = case_when(
         survey == TRUE ~ n,
@@ -216,7 +218,7 @@ for(surveyOnly in c(TRUE, FALSE)) {
       dplyr::filter(plotGroup == x) |> 
       mutate(
         survey = factor(survey, levels = c(FALSE, TRUE)),
-        species = factor(species, levels = unique(.$species)),
+        species = factor(species, levels = unique(species)),
       ) |> 
       arrange(date, survey, species)
     
@@ -285,13 +287,13 @@ for(surveyOnly in c(TRUE, FALSE)) {
   })
   if(surveyOnly == TRUE) {
     patchwork::wrap_plots(p_yday_species_list, axis_titles = "collect") |> 
-      saveRDS(., "tmp/p_yday_species2.rds")
+      saveRDS("tmp/p_yday_species2.rds")
     
     saveRDS(p_yday_species_list, file = "tmp/p_yday_species_list.rds")
     
   } else {
     patchwork::wrap_plots(p_yday_species_list, axis_titles = "collect") |> 
-      ggsave(., filename = "figs/survey_with_incidental_counts.png", dpi = 600)
+      ggsave(filename = "figs/survey_with_incidental_counts.png", dpi = 600)
   }
   
 }

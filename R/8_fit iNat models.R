@@ -4,11 +4,13 @@
 #          analysis-ready table from "7_prep iNat models.R", checks predictor
 #          collinearity (VIF), fits the use-availability (Bernoulli) model set,
 #          compares them by LOO, and builds the manuscript figures. No raster
-#          extraction or downloads happen here.
+#          extraction or downloads happen here; the Figure 5 map reads a small
+#          pre-aggregated ALAN basemap baked by 7_prep.
 # Input:   data/derived/useavail_points.csv               (from 7_prep iNat models.R)
 #          data/derived/inat_background_effort.csv         (effort reference)
+#          data/ALAN/alan_glow_log_ll.tif                  (glow basemap, from 7_prep)
 # Outputs: out/models/m_useavail_*.rds                     (cached brms fits)
-# Figures: figs/B_main_combo_datatop_data.{png,svg}  (main use-availability figure)
+# Figures: out/figs/f5_iNaturalist results v3.{png,svg}  (Figure 5, publication copy)
 #          figs/B_contrasts.{png,svg}                (raw use-vs-available contrasts)
 #          figs/SI_effort_validation.{png,svg}
 #          figs/SI_effectsize_loo.{png,svg}
@@ -17,6 +19,8 @@
 # Setup ----
 source("R/0_funs.R")
 library(sf)
+library(terra)
+library(tidyterra)
 library(rnaturalearth)
 library(lubridate)
 library(data.table)
@@ -114,54 +118,56 @@ labelSample <- function(used) factor(used, levels = c(0, 1),
   scale_colour_manual(NULL, values = sampleColors))
 
 # Fit use-availability models ----
-## Full data: structural term + season ----
-# Use-availability logistic model: does collision favour taller buildings and
-# migration-window timing, relative to where/when people observe? Building height
-# is log1p-transformed (right-skewed; ~half the background is 0 m). The intercept is
-# not interpretable in a use-availability design (it tracks the use:available
-# ratio); coefficients express relative selection.
-m_useavail_bh <- brm_ua(used ~ log1p(building_height) + ns(yday, 5),
-                        model_data, "m_useavail_bh_yday")
-pp_check(m_useavail_bh, ndraws = 100)
-bayes_R2(m_useavail_bh)
-
-# Shape check: is log1p adequate, or is the building-height response curved?
-m_useavail_bhquad <- brm_ua(used ~ log1p(building_height) + I(log1p(building_height)^2) + ns(yday, 5),
-                            model_data, "m_useavail_bhquad_yday")
-loo_compare(m_useavail_bh, m_useavail_bhquad)
-
-# ALAN (nighttime radiance; VIIRS VNL v2 2024) as a candidate structural driver in
-# place of building height (parallel to m_useavail_bh, same rows for a fair LOO):
-# does light alone track collisions? Building-height-plus-ALAN and the radar-matched
-# comparisons follow below.
-m_useavail_alan <- brm_ua(used ~ log1p(alan) + ns(yday, 5),
+## Full data: structural terms + season ----
+# Use-availability logistic model: does collision favour taller, brighter-lit sites
+# and migration-window timing, relative to where/when people observe? Building height
+# and ALAN each enter as a natural spline on the log1p scale (ns(log1p(x), 3)): LOO
+# supports curvature over a linear log1p term for both, and a spline is
+# indistinguishable from a two-part hurdle despite the point mass at 0 (55% of points
+# have no mapped building, 15% no detectable light), so the simpler spline is kept.
+# Traffic (below) stays linear log1p -- no LOO support for a spline. The intercept is
+# not interpretable in a use-availability design (it tracks the use:available ratio);
+# effects express relative selection.
+m_useavail_bh   <- brm_ua(used ~ ns(log1p(building_height), 3) + ns(yday, 5),
+                          model_data, "m_useavail_bh_yday")
+m_useavail_alan <- brm_ua(used ~ ns(log1p(alan), 3) + ns(yday, 5),
                           model_data, "m_useavail_alan_yday")
-loo_compare(m_useavail_bh, m_useavail_alan)
-# Land cover and distance to water remain candidate covariates (not yet added).
+pp_check(m_useavail_bh, ndraws = 100)
 
-## Radar-matched subset: add night-migration traffic (and ALAN) ----
-# Competing models on the radar-matched subset (same rows, for a fair LOO): season
-# only, night traffic only, and both. Traffic is log1p-transformed (right-skewed).
-# "Both" lets traffic express the night-level anomaly beyond the seasonal mean
-# (traffic and ns(yday) share only ~27% of variance). The two ALAN models then test
-# whether light, not raw height, carries the built-environment signal: m_useavail_radar_all
-# adds ALAN to the top model (does the height coefficient survive?), and
-# m_useavail_radar_alan swaps height for ALAN.
-m_useavail_season_sub  <- brm_ua(used ~ log1p(building_height) + ns(yday, 5),
-                                 radar_data, "m_useavail_season_sub")
-m_useavail_radaronly   <- brm_ua(used ~ log1p(building_height) + log1p(traffic),
-                                 radar_data, "m_useavail_radaronly")
-m_useavail_radar_both  <- brm_ua(used ~ log1p(building_height) + ns(yday, 5) + log1p(traffic),
-                                 radar_data, "m_useavail_radar_both")
-m_useavail_radar_alan  <- brm_ua(used ~ log1p(alan) + ns(yday, 5) + log1p(traffic),
-                                 radar_data, "m_useavail_radar_alan")
-m_useavail_radar_all   <- brm_ua(used ~ log1p(building_height) + log1p(alan) + ns(yday, 5) + log1p(traffic),
-                                 radar_data, "m_useavail_radar_all")
+# Functional-form check: the spline is preferred over a linear log1p term for each
+# structural driver (linear forms fit here only for the LOO comparison).
+m_useavail_bh_lin   <- brm_ua(used ~ log1p(building_height) + ns(yday, 5),
+                              model_data, "m_useavail_bh_linear")
+m_useavail_alan_lin <- brm_ua(used ~ log1p(alan) + ns(yday, 5),
+                              model_data, "m_useavail_alan_linear")
+loo_compare(m_useavail_bh, m_useavail_bh_lin)
+loo_compare(m_useavail_alan, m_useavail_alan_lin)
+
+# Full-data co-headline model: collisions favour sites that are both tall and lit.
+m_useavail_struct <- brm_ua(used ~ ns(log1p(building_height), 3) + ns(log1p(alan), 3) + ns(yday, 5),
+                            model_data, "m_useavail_struct")
+
+## Radar-matched subset: add night-migration traffic ----
+# Competing models on the radar-matched subset (same rows, for a fair LOO). Traffic
+# is linear log1p (right-skewed; no LOO support for a spline). Season only, traffic
+# only, both, then the two light models: m_useavail_radar_alan swaps height for ALAN,
+# and m_useavail_radar_all (top model) carries height, light, season and night traffic
+# together -- letting us see how much of the built-environment signal is light rather
+# than raw height, and whether night traffic adds beyond both.
+m_useavail_season_sub <- brm_ua(used ~ ns(log1p(building_height), 3) + ns(yday, 5),
+                                radar_data, "m_useavail_season_sub")
+m_useavail_radaronly  <- brm_ua(used ~ ns(log1p(building_height), 3) + log1p(traffic),
+                                radar_data, "m_useavail_radaronly")
+m_useavail_radar_both <- brm_ua(used ~ ns(log1p(building_height), 3) + ns(yday, 5) + log1p(traffic),
+                                radar_data, "m_useavail_radar_both")
+m_useavail_radar_alan <- brm_ua(used ~ ns(log1p(alan), 3) + ns(yday, 5) + log1p(traffic),
+                                radar_data, "m_useavail_radar_alan")
+m_useavail_radar_all  <- brm_ua(used ~ ns(log1p(building_height), 3) + ns(log1p(alan), 3) + ns(yday, 5) + log1p(traffic),
+                                radar_data, "m_useavail_radar_all")
 
 loo_compare(m_useavail_season_sub, m_useavail_radaronly, m_useavail_radar_both,
             m_useavail_radar_alan, m_useavail_radar_all)
-fixef(m_useavail_radar_all)[c("log1pbuilding_height", "log1palan", "log1ptraffic"), ]
-conditional_effects(m_useavail_radar_both)
+conditional_effects(m_useavail_radar_all)
 
 # Diagnostic: nearest-station assignment (each focal point drawn to its station).
 # Only runs if the station table is loaded (e.g. after sourcing 7_prep in the same
@@ -212,59 +218,136 @@ if (!file.exists("tmp/ne_lakes.rds")) {
 na_lakes <- readRDS("tmp/ne_lakes.rds")
 proj_na <- "+proj=laea +lat_0=45 +lon_0=-100 +datum=WGS84 +units=m +no_defs"
 
-(f_map <- ggplot() +
-  geom_sf(data = na_land, fill = "grey95", colour = NA) +
-  geom_sf(data = na_states, colour = "grey82", linewidth = 0.12) +
-  geom_sf(data = na_land, fill = NA, colour = "grey65", linewidth = 0.25) +
-  geom_sf(data = na_lakes, fill = "white", colour = "grey82", linewidth = 0.1) +
-  geom_sf(data = background_region, fill = "#159367", colour = NA, alpha = 0.15) +
-  geom_sf(data = background_sf, aes(colour = "Background observations"), size = 0.2, alpha = 0.3) +
-  geom_sf(data = collisions_sf, aes(colour = "Bat collisions"), size = 0.9) +
-  scale_colour_manual(NULL,
-    values = c("Bat collisions" = collisionColor, "Background observations" = backgroundColor),
-    breaks = c("Bat collisions", "Background observations"),
-    guide = guide_legend(override.aes = list(size = 2.2, alpha = 1))) +
-  coord_sf(crs = proj_na, default_crs = st_crs(4326),
-           xlim = st_bbox(background_region)[c("xmin", "xmax")],
-           ylim = st_bbox(background_region)[c("ymin", "ymax")], expand = TRUE) +
-  theme_void() +
-  theme(panel.grid.major = element_line(colour = "grey90", linewidth = 0.25),
-        legend.position = "inside", legend.position.inside = c(0.01, 0.02),
-        legend.justification = c(0, 0), legend.key = element_blank(),
-        legend.text = element_text(size = 8),
-        legend.key.size = unit(10, "pt"), legend.key.spacing.y = unit(3, "pt"),
-        legend.background = element_rect(fill = "white", colour = "grey70", linewidth = 0.2),
-        legend.margin = margin(2, 4, 2, 3)))
-# f_map is not saved on its own; it enters the combined figure below as panel (b).
+# The map is drawn on the ALAN surface itself: light is the dominant driver, so the
+# basemap doubles as the sampling-design map and as a picture of the covariate. Dark
+# base with a magma ramp; unlit land and ocean are both 0 radiance, hence near-black.
+base_dk  <- "#03010a"
+col_bg   <- "#E8EEF7"   # background (available) points, insets only
+col_coll <- "#5AB0FF"   # collisions: luminous blue, reads against the glow
+col_reg  <- "#38D6B0"   # 100-km available region outline
+# Shared key for the whole figure: the records are only drawn in the insets, but the
+# legend lives on the map panel, which has the room for it.
+mapKeys <- c("Bat collision"           = col_coll,
+             "Background (available)"  = col_bg,
+             "100-km available region" = col_reg)
+lim_hi   <- log1p(50)   # ~p99.9 of radiance -> palette top; cores saturate
+glow_ll  <- rast("data/ALAN/alan_glow_log_ll.tif"); names(glow_ll) <- "radiance"
+glow_pr  <- project(glow_ll, proj_na, method = "bilinear")
 
-## Conditional-effect panels of the top model (building height + season + night traffic) ----
-ce <- conditional_effects(m_useavail_radar_both)
+fillGlow <- function(guide = "none") scale_fill_viridis_c(
+  option = "magma", limits = c(0, lim_hi), oob = scales::squish, na.value = base_dk,
+  name = "Nighttime\nradiance", breaks = log1p(c(0, 1, 10, 50)),
+  labels = c("0", "1", "10", "50+"), guide = guide)
+themeDark <- function() theme_void(base_size = 8) + theme(
+  plot.background  = element_rect(fill = base_dk, colour = NA),
+  panel.background = element_rect(fill = base_dk, colour = NA),
+  legend.title = element_text(colour = "grey85", size = 7),
+  legend.text  = element_text(colour = "grey75", size = 6),
+  plot.margin  = margin(1, 1, 1, 1))
+
+# Per-collision buffers; the union is the "available" region. Only the circles are
+# drawn on the main map -- each is centred on a collision, so they mark the records
+# and the available footprint at once, without a layer of overlapping points.
+buffers <- st_buffer(collisions_sf, 100000)
+# View = extent of all buffers plus a margin, so every circle sits fully in frame. The
+# western margin is dropped: the Pacific-coast circles already reach into open ocean,
+# where no background exists, so extra room there is dead space.
+be   <- st_bbox(st_transform(background_region, proj_na))
+mrg  <- 75000
+mrg_w <- 0
+
+# Inset windows: a dense cluster (mid-Atlantic) and an isolated collision (Denver),
+# zoomed far enough that individual background points read. Denver shows the effort
+# weighting directly -- available points track the Front Range glow.
+winA <- list(xlim = c(-79.5, -73.5), ylim = c(38.2, 41.8), col = "#8BD3FF", tag = "(b)")
+winB <- list(xlim = c(-107, -103),   ylim = c(37.8, 41.6), col = "#F5C563", tag = "(c)")
+boxPoly <- function(w) st_as_sf(st_sfc(st_polygon(list(rbind(
+  c(w$xlim[1], w$ylim[1]), c(w$xlim[2], w$ylim[1]), c(w$xlim[2], w$ylim[2]),
+  c(w$xlim[1], w$ylim[2]), c(w$xlim[1], w$ylim[1])))), crs = 4326))
+
+(f_map <- ggplot() +
+  geom_spatraster(data = glow_pr, maxcell = 6e6) +
+  geom_sf(data = na_land, fill = NA, colour = "grey30", linewidth = 0.12) +
+  geom_sf(data = background_region, aes(colour = "100-km available region"),
+          fill = NA, linewidth = 0.2, show.legend = "line") +
+  # One-row, fully transparent point layers. The records themselves are drawn only in
+  # the insets, where they are legible, but their symbols still need a key; these
+  # layers render nothing and exist purely to populate the legend.
+  geom_sf(data = collisions_sf[1, ], aes(colour = "Bat collision"),
+          alpha = 0, size = 0.1, show.legend = "point") +
+  geom_sf(data = background_sf[1, ], aes(colour = "Background (available)"),
+          alpha = 0, size = 0.1, show.legend = "point") +
+  geom_sf(data = boxPoly(winA), fill = NA, colour = winA$col, linewidth = 0.4) +
+  geom_sf(data = boxPoly(winB), fill = NA, colour = winB$col, linewidth = 0.4) +
+  # Point and line layers share this scale, so every key would otherwise draw both
+  # glyphs (a dot with a line through it). override.aes takes one value per key:
+  # hide the line on the two record keys, hide the dot on the region key.
+  scale_colour_manual(NULL, values = mapKeys, breaks = names(mapKeys),
+                      guide = guide_legend(order = 2, override.aes = list(
+                        alpha    = 1,
+                        size     = c(1.6, 1.6, 0),
+                        linetype = c(0, 0, 1)))) +
+  fillGlow(guide = guide_colourbar(order = 1, barheight = unit(38, "pt"),
+                                   barwidth = unit(5, "pt"),
+                                   ticks.colour = NA, frame.colour = NA)) +
+  coord_sf(crs = proj_na, xlim = c(be[["xmin"]] - mrg_w, be[["xmax"]] + mrg),
+           ylim = c(be[["ymin"]] - mrg, be[["ymax"]] + mrg), expand = FALSE) +
+  themeDark() +
+  theme(legend.position = "inside", legend.position.inside = c(0.015, 0.30),
+        legend.justification = c(0, 0.5), legend.box.just = "left",
+        legend.key = element_blank(), legend.spacing.y = unit(3, "pt")))
+
+# Inset panels: buffers merge into the union outline (as on the main map), with the
+# collisions and the background points that were drawn inside them.
+insetPanel <- function(w) {
+  ext_w <- ext(w$xlim[1] - 0.4, w$xlim[2] + 0.4, w$ylim[1] - 0.4, w$ylim[2] + 0.4)
+  pb <- st_bbox(st_transform(boxPoly(w), proj_na))
+  ggplot() +
+    geom_spatraster(data = project(crop(glow_ll, ext_w), proj_na), maxcell = 2e6) +
+    geom_sf(data = background_region, fill = NA, colour = col_reg, linewidth = 0.25) +
+    geom_sf(data = background_sf[lengths(st_intersects(background_sf, boxPoly(w))) > 0, ],
+            shape = 21, fill = col_bg, colour = "grey20", stroke = 0.1, size = 0.7, alpha = 0.75) +
+    geom_sf(data = collisions_sf[lengths(st_intersects(collisions_sf, boxPoly(w))) > 0, ],
+            shape = 21, fill = col_coll, colour = "white", stroke = 0.3, size = 1.5) +
+    fillGlow() +
+    coord_sf(crs = proj_na, xlim = pb[c("xmin", "xmax")], ylim = pb[c("ymin", "ymax")],
+             expand = FALSE) +
+    themeDark() +
+    theme(panel.border = element_rect(fill = NA, colour = w$col, linewidth = 0.9))
+}
+f_insetA <- insetPanel(winA); f_insetB <- insetPanel(winB)
+# These are not saved alone; they enter the combined figure below as panels (a)-(c).
+
+## Conditional-effect panels of the top model (building height + ALAN + season + night traffic) ----
+ce <- conditional_effects(m_useavail_radar_all)
 # Recompute the traffic effect on a log-spaced grid (other covariates held at their
 # mean, as conditional_effects does) so the line is smooth on the log axis instead
 # of segmented where the default linear grid is sparse.
 traffic_grid <- data.frame(
   building_height = mean(radar_data$building_height),
+  alan = mean(radar_data$alan),
   yday = mean(radar_data$yday),
   traffic = 10^seq(log10(min(radar_data$traffic[radar_data$traffic > 0])),
                    log10(max(radar_data$traffic)), length.out = 300)
 )
-traffic_epred <- posterior_epred(m_useavail_radar_both, newdata = traffic_grid)
+traffic_epred <- posterior_epred(m_useavail_radar_all, newdata = traffic_grid)
 ceData <- list(
   building_height = ce$building_height,
+  alan = ce$alan,
   yday = ce$yday,
   traffic = traffic_grid |>
     mutate(estimate__ = colMeans(traffic_epred),
            lower__ = apply(traffic_epred, 2, quantile, 0.025),
            upper__ = apply(traffic_epred, 2, quantile, 0.975))
 )
-ceLabs <- c(building_height = "Building height (m)", yday = "Day of year",
-            traffic = "Nightly migration traffic")
+ceLabs <- c(building_height = "Building height (m)", alan = "Nighttime radiance (ALAN)",
+            yday = "Day of year", traffic = "Nightly migration traffic")
 
 # `dat` (optional) overlays the records as rugs: collisions along the top (accent),
 # background along the bottom (subtle) -- the binary-response analogue of data
 # points. `y_accuracy` (optional) fixes the y-tick decimal places so several panels
 # get identical axis-text width, keeping their panel regions equal when arranged.
-cePanel <- function(v, logx = FALSE, dat = NULL, y_accuracy = NULL) {
+cePanel <- function(v, logx = FALSE, log1px = FALSE, dat = NULL, y_accuracy = NULL) {
   dd <- ceData[[v]]
   dd$x <- dd[[v]]
   g <- ggplot(dd, aes(x, estimate__)) +
@@ -285,6 +368,10 @@ cePanel <- function(v, logx = FALSE, dat = NULL, y_accuracy = NULL) {
                length = unit(0.05, "npc"))
   }
   if (logx) g <- g + scale_x_log10()
+  # ALAN is right-skewed with a point mass at 0 (log1p in the model); a pseudo-log
+  # axis spreads the curve out while still showing the zero values.
+  if (log1px) g <- g + scale_x_continuous(trans = scales::pseudo_log_trans(base = 10),
+                                          breaks = c(0, 3, 10, 30, 100, 300))
   if (v == "yday") {
     g <- g + scale_x_continuous("Day of year",
                                 breaks = monthDayYear_to_yday(monthFirsts),
@@ -308,12 +395,13 @@ contrastPanel <- function(x, xlab, logx = FALSE) {
   g
 }
 (f_contrasts <- contrastPanel("building_height", "Building height (m)") +
+    contrastPanel("alan", "Nighttime radiance (ALAN)") +
     contrastPanel("yday", "Day of year") +
     contrastPanel("traffic", "Nightly migration traffic (night prior)", logx = TRUE) +
-    plot_layout(nrow = 1, guides = "collect") &
+    plot_layout(nrow = 2, guides = "collect") &
     theme(legend.position = "bottom"))
-ggsave("figs/B_contrasts.png", f_contrasts, width = 10, height = 3.6, dpi = 600)
-ggsave("figs/B_contrasts.svg", f_contrasts, width = 10, height = 3.6)
+ggsave("figs/B_contrasts.png", f_contrasts, width = 8, height = 6, dpi = 600)
+ggsave("figs/B_contrasts.svg", f_contrasts, width = 8, height = 6)
 
 ## SI: background reproduces observer effort; collisions do not ----
 effort_month <- fread("data/derived/inat_background_effort.csv")[
@@ -336,85 +424,71 @@ month_shares <- rbindlist(list(
 ggsave("figs/SI_effort_validation.png", f_effort, width = 7, height = 4, dpi = 600, bg = "white")
 ggsave("figs/SI_effort_validation.svg", f_effort, width = 7, height = 4)
 
-## Species composition of collisions over the year ----
-# Descriptive complement to the modeled day-of-year effect: which species collide,
-# and when. Grouping and colours match the iNaturalist descriptive figure (script
-# 6) -- the three commonly-identified species plus an "Other/unknown" catch-all.
-# Species are assigned only from research-grade identifications; everything else
-# (coarser or unverified IDs) falls into Other/unknown.
-speciesFocal  <- c("Lasiurus borealis", "Lasionycteris noctivagans", "Eptesicus fuscus")
-speciesLevels <- rev(c(speciesFocal, "Other/unknown"))
-speciesColors <- c("Lasiurus borealis"         = "#9E2A2B",
-                   "Lasionycteris noctivagans"  = "#7072A0",
-                   "Eptesicus fuscus"           = "#A8541F",
-                   "Other/unknown"              = "grey60")
-speciesLabels <- c("Lasiurus borealis"         = "*Lasiurus borealis*",
-                   "Lasionycteris noctivagans"  = "*Lasionycteris noctivagans*",
-                   "Eptesicus fuscus"           = "*Eptesicus fuscus*",
-                   "Other/unknown"              = "Other/unknown")
-collision_species <- points[used == 1, .(yday, group = factor(
-  fifelse(quality_grade == "research" & scientific_name %in% speciesFocal,
-          scientific_name, "Other/unknown"),
-  levels = speciesLevels))]
-
-# Stacked day-of-year counts. `boundary = 0` anchors the bins so none straddle the
-# Jan/Dec edges and get dropped. Wide-and-short by design. The legend is reversed
-# (`reverse = TRUE` reorders the keys only, not the stack) and sits low and inside
-# the panel, in the summer trough between the two seasonal peaks.
-speciesPanel <- function() {
-  ggplot(collision_species, aes(x = yday, fill = group)) +
-    geom_histogram(binwidth = 14, boundary = 0, colour = "white", linewidth = 0.1) +
-    scale_fill_manual(NULL, values = speciesColors, labels = speciesLabels, drop = FALSE,
-                      guide = guide_legend(ncol = 1, reverse = TRUE)) +
-    scale_x_continuous("Day of year",
-                       breaks = monthDayYear_to_yday(monthFirsts),
-                       labels = format(mdy(monthFirsts), "%b"), expand = c(0.01, 0)) +
-    scale_y_continuous("Number of collision records", expand = expansion(mult = c(0, 0.08))) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1),
-          legend.position = "inside",
-          legend.position.inside = c(0.02, 0.98), legend.justification = c(0, 1),
-          legend.title = element_blank(),
-          legend.text = element_markdown(size = 8),
-          legend.key.size = unit(10, "pt"),
-          legend.background = element_blank(),
-          legend.key.spacing.y = unit(3, "pt"))
-}
-
-## Combined main figure ----
-# Top row: species composition over day of year (a) beside the sampling map (b);
-# bottom row: the three modeled conditional effects (c-e). Built as two separate
-# patchworks and then stacked, so the bottom three panels stay equal-width and
-# aligned regardless of the map's fixed aspect ratio. Tags are set per panel because
+## Combined main figure (Figure 5) ----
+# Row 1: the sampling design on the ALAN surface -- the map (a) with the two zoom
+# insets (b, c) that show the effort-weighted background points at a scale where they
+# are legible. Rows 2-3: the four modelled conditional effects as a 2x2 block (d-g).
+# Sized for a full journal page (max width ~180 mm). The species-composition panel
+# that used to open this figure now lives in Figure 4c, with the descriptive material.
+# Built as two patchworks and stacked, so the effect panels stay equal-width and
+# aligned regardless of the map's fixed aspect ratio; tags are set per panel because
 # auto-tagging treats each nested patchwork as one unit.
-p_species <- speciesPanel()                                                   + labs(tag = "(a)")
-p_map     <- f_map                                                            + labs(tag = "(b)")
-# y_accuracy = 0.001 gives all three the same-width y labels, so their panel
-# regions come out exactly equal.
-p_bh      <- cePanel("building_height", dat = radar_data, y_accuracy = 0.001) + labs(tag = "(c)")
-p_yday    <- cePanel("yday", dat = radar_data, y_accuracy = 0.001)            + labs(tag = "(d)")
-p_traffic <- cePanel("traffic", logx = TRUE, dat = radar_data, y_accuracy = 0.001) + labs(tag = "(e)")
-datatop_top    <- p_species + p_map + plot_layout(widths = c(1, 1))
-datatop_bottom <- p_bh + p_yday + p_traffic + plot_layout(nrow = 1)
-(f_main_combo_datatop_data <- wrap_plots(datatop_top, datatop_bottom, ncol = 1,
-                                         heights = c(1.5, 1)) &
-   theme(plot.tag = element_text(size = 10), axis.text.x = element_text(size = 8)))
-ggsave("figs/B_main_combo_datatop_data.png", f_main_combo_datatop_data, width = 9, height = 6, dpi = 600, bg = "white")
-ggsave("figs/B_main_combo_datatop_data.svg", f_main_combo_datatop_data, width = 9, height = 6)
+p_map     <- f_map     + labs(tag = "(a)") + theme(plot.tag = element_text(colour = "grey85"))
+p_insetA  <- f_insetA  + labs(tag = winA$tag) + theme(plot.tag = element_text(colour = winA$col))
+p_insetB  <- f_insetB  + labs(tag = winB$tag) + theme(plot.tag = element_text(colour = winB$col))
+# y_accuracy gives the effect panels the same-width y labels, so their panel regions
+# come out equal.
+p_bh      <- cePanel("building_height", dat = radar_data, y_accuracy = 0.001) + labs(tag = "(d)")
+p_alan    <- cePanel("alan", log1px = TRUE, dat = radar_data, y_accuracy = 0.001) + labs(tag = "(e)")
+p_yday    <- cePanel("yday", dat = radar_data, y_accuracy = 0.001)            + labs(tag = "(f)")
+p_traffic <- cePanel("traffic", logx = TRUE, dat = radar_data, y_accuracy = 1e-4) + labs(tag = "(g)")
+
+# The map is portrait (~0.92 wide:tall). coord_sf preserves that aspect, so a slot much
+# wider than 0.92 x the row height just letterboxes it with dead space; 1.5:1 keeps the
+# map close to filling its slot while leaving the insets legible.
+f5_map_row <- p_map + (p_insetA / p_insetB) + plot_layout(widths = c(1.5, 1))
+# Shrink the axis text on the effect panels only: applying it to the whole figure with
+# `&` would override theme_void() on the map panels and print graticule labels on them.
+f5_effects <- (p_bh + p_alan + p_yday + p_traffic + plot_layout(nrow = 2)) &
+  theme(axis.text.x = element_text(size = 7))
+(f5_useavail <- wrap_plots(f5_map_row, f5_effects, ncol = 1, heights = c(1, 1.15)) &
+   theme(plot.tag = element_text(size = 9)))
+# Written straight to out/figs/ as the publication copy. Bump the version in the
+# filename by hand when the figure changes materially.
+ggsave("out/figs/f5_iNaturalist results v3.png", f5_useavail, width = 7.1, height = 9, dpi = 600, bg = "white")
+ggsave("figs/f5_iNaturalist results v3.svg", f5_useavail, width = 7.1, height = 9)
 
 ## SI: effect sizes and model comparison ----
-# (a) posterior coefficients (relative selection strength) for the two linear
-# terms; (b) LOO elpd of the three competing models (the "both" model is the ref).
-coefs <- as.data.frame(fixef(m_useavail_radar_both))[c("log1pbuilding_height", "log1ptraffic"), ]
-coefs$term <- c("Building height (log1p)", "Night traffic (log1p)")
-p_coef <- ggplot(coefs, aes(Estimate, term)) +
-  geom_vline(xintercept = 0, linetype = 2, linewidth = 0.2) +
-  geom_pointrange(aes(xmin = Q2.5, xmax = Q97.5)) +
-  scale_x_continuous("Coefficient (log-odds of use vs available)") +
+# (a) comparable effect sizes: the odds ratio for an interquantile (10th -> 90th
+# percentile) change in each driver from the top model, holding the others at their
+# mean. Building height and ALAN are splined (no single coefficient), so each is
+# summarised on a common scale as relative selection across its observed range;
+# traffic is linear but shown the same way for comparability. (b) LOO elpd of the five
+# radar-matched models (top model is the reference).
+iqOR <- function(model, var, data, lo = 0.10, hi = 0.90) {
+  base <- data.frame(building_height = mean(data$building_height), alan = mean(data$alan),
+                     yday = mean(data$yday), traffic = mean(data$traffic))
+  nd <- base[c(1, 1), ]; nd[[var]] <- quantile(data[[var]], c(lo, hi))
+  d  <- posterior_linpred(model, newdata = nd)
+  d  <- d[, 2] - d[, 1]                          # log odds ratio, 90th vs 10th pct
+  data.frame(Estimate = mean(d), Q2.5 = quantile(d, .025), Q97.5 = quantile(d, .975))
+}
+effs <- do.call(rbind, lapply(c("building_height", "alan", "traffic"),
+                              function(v) iqOR(m_useavail_radar_all, v, radar_data)))
+effs$term <- factor(c("Building height", "ALAN (radiance)", "Night traffic"),
+                    levels = rev(c("Building height", "ALAN (radiance)", "Night traffic")))
+p_coef <- ggplot(effs, aes(exp(Estimate), term)) +
+  geom_vline(xintercept = 1, linetype = 2, linewidth = 0.2) +
+  geom_pointrange(aes(xmin = exp(Q2.5), xmax = exp(Q97.5))) +
+  scale_x_log10("Odds ratio (10th → 90th percentile of driver)") +
   ylab(NULL)
-loo_tab <- as.data.frame(loo_compare(m_useavail_season_sub, m_useavail_radaronly, m_useavail_radar_both))
-loo_labs <- c(m_useavail_radar_both = "building height + season + traffic",
-              m_useavail_radaronly = "building height + traffic",
-              m_useavail_season_sub = "building height + season")
+loo_tab <- as.data.frame(loo_compare(m_useavail_season_sub, m_useavail_radaronly,
+                                     m_useavail_radar_both, m_useavail_radar_alan, m_useavail_radar_all))
+loo_labs <- c(m_useavail_radar_all  = "height + light + season + traffic",
+              m_useavail_radar_alan = "light + season + traffic",
+              m_useavail_radar_both = "height + season + traffic",
+              m_useavail_radaronly  = "height + traffic",
+              m_useavail_season_sub = "height + season")
 loo_tab$model <- factor(loo_labs[rownames(loo_tab)], levels = rev(loo_labs[rownames(loo_tab)]))
 p_loo <- ggplot(loo_tab, aes(elpd_diff, model)) +
   geom_pointrange(aes(xmin = elpd_diff - se_diff, xmax = elpd_diff + se_diff)) +
@@ -423,5 +497,5 @@ p_loo <- ggplot(loo_tab, aes(elpd_diff, model)) +
 (f_effectsize_loo <- p_coef + p_loo +
    plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
    theme(plot.tag = element_text(size = 10)))
-ggsave("figs/SI_effectsize_loo.png", f_effectsize_loo, width = 9, height = 3, dpi = 600, bg = "white")
-ggsave("figs/SI_effectsize_loo.svg", f_effectsize_loo, width = 9, height = 3)
+ggsave("figs/SI_effectsize_loo.png", f_effectsize_loo, width = 10, height = 3.2, dpi = 600, bg = "white")
+ggsave("figs/SI_effectsize_loo.svg", f_effectsize_loo, width = 10, height = 3.2)

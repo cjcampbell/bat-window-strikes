@@ -31,9 +31,9 @@ df <- read.csv("data/iNat_observations_tidy_manualChecks.csv") |>
     yday = yday(datetime.date)
   ) |> 
   # Join with taxonomy data.
-  left_join(., taxTree, by = c("scientific_name" = "search")) |> 
+  left_join(taxTree, by = c("scientific_name" = "search")) |>
   # Unite with spatial data
-  st_join(., world)
+  st_join(world)
 
 
 # Create table with observation IDs and license info for retained obs. ------
@@ -65,11 +65,11 @@ df |> dplyr::filter(is.na(continent))
 # To resolve this, find the nearest country and replace NA's.
 for(i in which(is.na(df$continent)) ) {
   
-  workingDF <- df[i,] |> 
-    st_distance(world) |> 
-    which.min() |> 
-    world[.,] |> 
-    as.data.frame() |> 
+  nearest <- df[i,] |>
+    st_distance(world) |>
+    which.min()
+  workingDF <- world[nearest,] |>
+    as.data.frame() |>
     dplyr::select(admin, adm0_a3, continent)
   
   df$admin[i]     <- workingDF$admin
@@ -111,11 +111,23 @@ ggplot() +
   scale_fill_viridis_c(option = "turbo", begin = 0.3)
 
 ## Figure 4a: Main map of all records ----
+# Box marking the North American records carried into panel (c) and Figure 5. Built
+# in lon/lat and segmentized before projecting, so its edges follow the Equal Earth
+# graticule rather than cutting straight across it. The southern edge sits below the
+# southernmost record (Panama, 8.8 degN), making explicit that Central America falls
+# within our definition of North America.
+noam_box <- st_bbox(c(xmin = -126, ymin = 5, xmax = -68, ymax = 54), crs = st_crs(proj.wgs84)) |>
+  st_as_sfc() |>
+  st_segmentize(units::set_units(100, "km")) |>
+  st_transform(myproj)
+
 # Plot circle in grid.
 iNat_map_grid_circle <- ggplot() +
   geom_sf(world, mapping = aes(), fill = "grey95", color = "grey60", linewidth = 0.1) +
   geom_sf(df_grid_count_grid, mapping = aes(), color = "grey50", fill = NA) +
   geom_sf(df_grid_count, mapping = aes(size = n), alpha = 0.5, color = "#00B31B") +
+  geom_sf(noam_box, mapping = aes(), fill = NA, color = "grey25", linewidth = 0.4,
+          linetype = "22") +
   scale_size_continuous(
     "Number of records",
     breaks = c(1,10,40,70),
@@ -248,7 +260,7 @@ df_grid |>
 df_grid |> 
   count(continent, scientific_name) |> 
   arrange(desc(n)) |> 
-  mutate(scientific_name=factor(scientific_name, levels = unique(.$scientific_name))) |> 
+  mutate(scientific_name=factor(scientific_name, levels = unique(scientific_name))) |>
   ggplot() +
   geom_col(aes(x = scientific_name, y = n)) +
   facet_wrap(~continent, axes = "all_x", scales = "free", space = "free_x") +
@@ -398,7 +410,7 @@ ddd <- df_NoAm_working |>
   arrange(desc(n))
 
 iNaturalist_record_by_spp <- ddd |>
-  mutate(species_rg_lab = factor(species_rg_lab, levels = unique(.$species_rg_lab))) |>
+  mutate(species_rg_lab = factor(species_rg_lab, levels = unique(species_rg_lab))) |>
   ggplot() +
   geom_col(aes(x = species_rg_lab, y = n, fill = species_rg)) +
   geom_text(aes(x = species_rg_lab, y = n, label = n), vjust = -0.25, color = "grey50", size = 2) +
@@ -417,84 +429,9 @@ iNaturalist_record_by_spp <- ddd |>
 ggsave(iNaturalist_record_by_spp, filename = "figs/iNaturalist_record_by_spp.png")
 
 
-ddd_bygroup <- ddd |>
-  as.data.frame |> 
-  mutate(
-    group = case_when(
-      species_rg %in% c(
-        "Lasiurus borealis",
-        "Lasionycteris noctivagans",
-        "Eptesicus fuscus"
-      ) ~ species_rg_lab,
-      TRUE ~ "Other"
-      ),
-    species = case_when(group == "Other" ~ group, TRUE ~ species_rg)
-    ) |> 
-  dplyr::summarise(n = sum(n), .by = c(`group`, `species`)) |> 
-  mutate(
-    group = factor(group, levels = rev(c(
-      "<i>Lasiurus borealis</i>",
-      "<i>Lasionycteris noctivagans</i>",
-      "<i>Eptesicus fuscus</i>",
-      "Other"
-    )))
-  )
+# ddd_bygroup / ddd_Others / p_barplot removed: they existed only to build the
+# old Figure 5 species barplot, which the use-availability driver figure replaced.
 
-ddd_Others <- ddd |>
-  dplyr::filter(
-    !species_rg %in% c(
-      "Lasiurus borealis",
-      "Lasionycteris noctivagans",
-      "Eptesicus fuscus"
-  )) |> 
-  mutate(
-    species_rg_lab = case_when(species_rg_lab == "Other/unknown" ~ "Unknown", TRUE ~ species_rg_lab),
-    species_rg_lab2 = paste0(species_rg_lab, ": ", n),
-    rownum = 9 - row_number()
-  )
-
-
-(p_barplot <- ggplot(ddd_bygroup) +
-  geom_col(aes(y = group, x = n, fill = species)) +
-  geom_text(aes(y = group, x = n, label = n), vjust = 2, hjust = 1.1, color = "white", size = 3) +
-  ggtext::geom_richtext(
-    aes(y = group, x = 0, label = group),
-    vjust = 0.5,
-    hjust = 0,
-    color = "white",
-    size = 3,
-    fill = NA, label.colour = NA
-  ) +
-  ggtext::geom_richtext(
-    data = ddd_Others,
-    aes(x = 65, y = 0.75 + (rownum / 4), label = species_rg_lab2),
-    text.color = "black",
-    hjust = 0,
-    fill = NA, label.colour = NA
-  ) +
-  scale_y_discrete("Species") +
-  scale_x_continuous(
-    "Number of North American iNaturalist records",
-    expand = expansion(add = c(0, 0)),
-    breaks = seq(0, 100, by = 25),
-    limits = c(0, 95)
-  ) +
-  scale_fill_manual(
-    "Species",
-    values = c(
-      "Other" = "grey50", 
-      "Eptesicus fuscus" = "#A8541F", 
-      "Lasionycteris noctivagans" = "#7072A0", 
-      "Lasiurus borealis" = "#9E2A2B"
-    )
-  )  +
-  theme(
-    legend.position = "none",
-    axis.ticks.y = element_blank(),
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank()
-  )
-)
 
 # Time of day exploration ----------
 
@@ -525,61 +462,85 @@ df_time |>
     scale_x_continuous("Hour of observation")
 )
 
+## Figure 4c: North American record timing by species ----
+# Moved here from Figure 5. Restricted to exactly the records the use-availability
+# models use (North America, 2019-2025, geoprivacy not obscured; n = 198), so the
+# panel's N matches Figure 5 rather than the fuller descriptive set. Species are
+# assigned only from research-grade identifications; grouping and colours match
+# Figure 5. The box on panel (a) marks this region.
+dddd_model <- dddd |>
+  dplyr::filter(geoprivacy != "obscured", year(datetime.date) %in% 2019:2025)
+
+speciesLevelsF4 <- rev(c("Lasiurus borealis", "Lasionycteris noctivagans",
+                         "Eptesicus fuscus", "Other/unknown"))
+speciesColorsF4 <- c("Lasiurus borealis"         = "#9E2A2B",
+                     "Lasionycteris noctivagans" = "#7072A0",
+                     "Eptesicus fuscus"          = "#A8541F",
+                     "Other/unknown"             = "grey60")
+speciesLabelsF4 <- c("Lasiurus borealis"         = "*Lasiurus borealis*",
+                     "Lasionycteris noctivagans" = "*Lasionycteris noctivagans*",
+                     "Eptesicus fuscus"          = "*Eptesicus fuscus*",
+                     "Other/unknown"             = "Other/unknown")
+
+# Legend sits outside on the right, matching panels (a) and (b); an inside legend
+# collides with the autumn peak and with the panel tag (placed inside at top-left).
+(p_NoAm_timing <- dddd_model |>
+  mutate(group = factor(group, levels = speciesLevelsF4)) |>
+  ggplot() +
+  geom_histogram(aes(x = yday, fill = group), binwidth = 14, boundary = 0,
+                 colour = "white", linewidth = 0.1) +
+  scale_fill_manual(NULL, values = speciesColorsF4, labels = speciesLabelsF4, drop = FALSE,
+                    guide = guide_legend(ncol = 1, reverse = TRUE)) +
+  scale_x_continuous("Day of year", breaks = datebreaks, labels = datelabs,
+                     expand = c(0.01, 0)) +
+  scale_y_continuous("Number of records", expand = expansion(mult = c(0, 0.08))) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 55, hjust = 1),
+    legend.text = ggtext::element_markdown(size = 9),
+    legend.key.size = unit(11, "pt"),
+    legend.key.spacing.y = unit(2, "pt")
+  ))
+
+
 # Figure 4 combo ------
-F4_combo <- iNat_map_grid_circle + p_timeOfDay + 
+# (a) global map with the North America box, (b) hour of observation (global), then
+# (c) North American record timing -- global to regional, handing off to Figure 5.
+F4_combo <- iNat_map_grid_circle + p_timeOfDay + p_NoAm_timing +
   plot_layout(
   design = "
     1
     2
+    3
     ",
-  heights = c(2,1),
+  heights = c(2,1,1),
   axis_titles = "collect_y"
 ) +
   plot_annotation(
-    tag_levels = 'a', tag_prefix = "(", tag_suffix = ")") & 
+    tag_levels = 'a', tag_prefix = "(", tag_suffix = ")") &
   theme(
     plot.tag.position  = c(0.1,0.95),
     plot.tag = element_text(size = 10)
   )
 
-ggsave(F4_combo, filename =  "figs/F4_combo.png", dpi = 600, width = 8, height = 7)
-ggsave(F4_combo, filename =  "figs/F4_combo.svg", width = 8, height = 7)
+ggsave(F4_combo, filename =  "figs/F4_combo.png", dpi = 600, width = 8, height = 9.5)
+ggsave(F4_combo, filename =  "figs/F4_combo.svg", width = 8, height = 9.5)
 
 
 
 
-# Figure 5 ------
-
-(f5_combo2 <- iNaturalist_NoAm_timing_list[[1]] +
-   iNaturalist_NoAm_timing_list[[2]] +
-   iNaturalist_NoAm_timing_list[[3]] +
-   iNaturalist_NoAm_timing_list[[4]] +
-   free(p_barplot) +
-   plot_layout(
-     design = "
-    123
-    455
-    ",
-     axis_titles = "collect_y"
-   ) +
-   plot_annotation(
-     tag_levels = 'a', tag_prefix = "(", tag_suffix = ")") & 
-   theme(
-     plot.tag.position  = c(0.1,0.95),
-     plot.tag = element_text(size = 10)
-   )
-)
-ggsave(f5_combo2, filename = "figs/f5_combo2.png", width = 10, height = 6, dpi = 600)
-ggsave(f5_combo2, filename = "figs/f5_combo2.svg", width = 9, height = 6)
+# Figure 5 is now the use-availability driver figure, built in "8_fit iNat models.R".
+# The per-species timing panels that used to make up Figure 5 here were superseded by
+# it; the all-species version now lives above as Figure 4c.
 
 
 # Tables + summaries ------
 df |> 
-  as.data.frame |> 
+  as.data.frame() |>
   count(admin) |> 
   arrange(desc(n))
 df |> 
-  as.data.frame |> 
+  as.data.frame() |>
   count(continent) 
 
 df |> 
