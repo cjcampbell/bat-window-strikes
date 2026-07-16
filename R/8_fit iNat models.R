@@ -10,7 +10,8 @@
 #          data/derived/inat_background_effort.csv         (effort reference)
 #          data/ALAN/alan_glow_log_ll.tif                  (glow basemap, from 7_prep)
 # Outputs: out/models/m_useavail_*.rds                     (cached brms fits)
-# Figures: out/figs/f5_iNaturalist results v3.{png,svg}  (Figure 5, publication copy)
+# Figures: figs/f5_part1_map_insets.{svg,png}   (Figure 5 top half -- combined by hand)
+#          figs/f5_part2_effects.{svg,png}      (Figure 5 bottom half -- combined by hand)
 #          figs/B_contrasts.{png,svg}                (raw use-vs-available contrasts)
 #          figs/SI_effort_validation.{png,svg}
 #          figs/SI_effectsize_loo.{png,svg}
@@ -381,6 +382,58 @@ cePanel <- function(v, logx = FALSE, log1px = FALSE, dat = NULL, y_accuracy = NU
   g
 }
 
+
+## Combined main figure (Figure 5) ----
+# Row 1: the sampling design on the ALAN surface -- the map (a) with the two zoom
+# insets (b, c) that show the effort-weighted background points at a scale where they
+# are legible. Rows 2-3: the four modelled conditional effects as a 2x2 block (d-g).
+# Sized for a full journal page (max width ~180 mm). The species-composition panel
+# that used to open this figure now lives in Figure 4c, with the descriptive material.
+# Built as two patchworks and stacked, so the effect panels stay equal-width and
+# aligned regardless of the map's fixed aspect ratio; tags are set per panel because
+# auto-tagging treats each nested patchwork as one unit.
+p_map     <- f_map     + labs(tag = "(a)") + theme(plot.tag = element_text(colour = "grey85"))
+p_insetA  <- f_insetA  + labs(tag = winA$tag) + theme(plot.tag = element_text(colour = winA$col))
+p_insetB  <- f_insetB  + labs(tag = winB$tag) + theme(plot.tag = element_text(colour = winB$col))
+# y_accuracy gives the effect panels the same-width y labels, so their panel regions
+# come out equal.
+p_bh      <- cePanel("building_height", dat = radar_data, y_accuracy = 0.001) + labs(tag = "(d)")
+p_alan    <- cePanel("alan", log1px = TRUE, dat = radar_data, y_accuracy = 0.001) + labs(tag = "(e)")
+p_yday    <- cePanel("yday", dat = radar_data, y_accuracy = 0.001)            + labs(tag = "(f)")
+p_traffic <- cePanel("traffic", logx = TRUE, dat = radar_data, y_accuracy = 1e-4) + labs(tag = "(g)")
+
+# Figure 5 is assembled BY HAND from the two halves exported below. patchwork cannot
+# reconcile the margins of the dark theme_void() map panels -- whose plot.background
+# paints their whole layout cell, so they read full-bleed -- with the axis-bearing
+# effect panels, which their axes inset. Flattening the nested patchworks into a single
+# `design` made no difference, so the two halves are exported separately as SVG and
+# combined in a vector editor. Sizes stack directly to 7.1 x 9 in (a full journal page).
+#
+# NOTE: nothing here writes to out/figs/. The publication copy
+# (out/figs/f5_iNaturalist results v3.png) is the hand-assembled one; a script-written
+# copy would silently clobber it.
+f5_tag  <- theme(plot.tag = element_text(size = 9))
+f5_axis <- theme(axis.text.x = element_text(size = 7))
+p_map     <- p_map     + f5_tag
+p_insetA  <- p_insetA  + f5_tag
+p_insetB  <- p_insetB  + f5_tag
+p_bh      <- p_bh      + f5_tag + f5_axis
+p_alan    <- p_alan    + f5_tag + f5_axis
+p_yday    <- p_yday    + f5_tag + f5_axis
+p_traffic <- p_traffic + f5_tag + f5_axis
+
+## Figure 5, top half: map (a) + insets (b, c) ----
+# 1.5:1 keeps the map close to its ~0.92 portrait aspect so coord_sf does not letterbox it.
+(f5_top <- p_map + (p_insetA / p_insetB) + plot_layout(widths = c(1.5, 1)))
+ggsave("figs/f5_part1_map_insets.svg", f5_top, width = 7.1, height = 4.19, bg = "white")
+ggsave("figs/f5_part1_map_insets.png", f5_top, width = 7.1, height = 4.19, dpi = 600, bg = "white")
+
+## Figure 5, bottom half: conditional effects, 2x2 (d-g) ----
+(f5_bottom <- p_bh + p_alan + p_yday + p_traffic + plot_layout(nrow = 2))
+ggsave("figs/f5_part2_effects.svg", f5_bottom, width = 7.1, height = 4.81, bg = "white")
+ggsave("figs/f5_part2_effects.png", f5_bottom, width = 7.1, height = 4.81, dpi = 600, bg = "white")
+
+
 ## Raw use-vs-available contrasts ----
 contrast_data <- radar_data |>
   mutate(sample = factor(used, levels = c(1, 0),
@@ -423,40 +476,6 @@ month_shares <- rbindlist(list(
                                          "collisions" = collisionColor)))
 ggsave("figs/SI_effort_validation.png", f_effort, width = 7, height = 4, dpi = 600, bg = "white")
 ggsave("figs/SI_effort_validation.svg", f_effort, width = 7, height = 4)
-
-## Combined main figure (Figure 5) ----
-# Row 1: the sampling design on the ALAN surface -- the map (a) with the two zoom
-# insets (b, c) that show the effort-weighted background points at a scale where they
-# are legible. Rows 2-3: the four modelled conditional effects as a 2x2 block (d-g).
-# Sized for a full journal page (max width ~180 mm). The species-composition panel
-# that used to open this figure now lives in Figure 4c, with the descriptive material.
-# Built as two patchworks and stacked, so the effect panels stay equal-width and
-# aligned regardless of the map's fixed aspect ratio; tags are set per panel because
-# auto-tagging treats each nested patchwork as one unit.
-p_map     <- f_map     + labs(tag = "(a)") + theme(plot.tag = element_text(colour = "grey85"))
-p_insetA  <- f_insetA  + labs(tag = winA$tag) + theme(plot.tag = element_text(colour = winA$col))
-p_insetB  <- f_insetB  + labs(tag = winB$tag) + theme(plot.tag = element_text(colour = winB$col))
-# y_accuracy gives the effect panels the same-width y labels, so their panel regions
-# come out equal.
-p_bh      <- cePanel("building_height", dat = radar_data, y_accuracy = 0.001) + labs(tag = "(d)")
-p_alan    <- cePanel("alan", log1px = TRUE, dat = radar_data, y_accuracy = 0.001) + labs(tag = "(e)")
-p_yday    <- cePanel("yday", dat = radar_data, y_accuracy = 0.001)            + labs(tag = "(f)")
-p_traffic <- cePanel("traffic", logx = TRUE, dat = radar_data, y_accuracy = 1e-4) + labs(tag = "(g)")
-
-# The map is portrait (~0.92 wide:tall). coord_sf preserves that aspect, so a slot much
-# wider than 0.92 x the row height just letterboxes it with dead space; 1.5:1 keeps the
-# map close to filling its slot while leaving the insets legible.
-f5_map_row <- p_map + (p_insetA / p_insetB) + plot_layout(widths = c(1.5, 1))
-# Shrink the axis text on the effect panels only: applying it to the whole figure with
-# `&` would override theme_void() on the map panels and print graticule labels on them.
-f5_effects <- (p_bh + p_alan + p_yday + p_traffic + plot_layout(nrow = 2)) &
-  theme(axis.text.x = element_text(size = 7))
-(f5_useavail <- wrap_plots(f5_map_row, f5_effects, ncol = 1, heights = c(1, 1.15)) &
-   theme(plot.tag = element_text(size = 9)))
-# Written straight to out/figs/ as the publication copy. Bump the version in the
-# filename by hand when the figure changes materially.
-ggsave("out/figs/f5_iNaturalist results v3.png", f5_useavail, width = 7.1, height = 9, dpi = 600, bg = "white")
-ggsave("figs/f5_iNaturalist results v3.svg", f5_useavail, width = 7.1, height = 9)
 
 ## SI: effect sizes and model comparison ----
 # (a) comparable effect sizes: the odds ratio for an interquantile (10th -> 90th
