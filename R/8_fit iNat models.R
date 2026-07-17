@@ -10,8 +10,7 @@
 #          data/derived/inat_background_effort.csv         (effort reference)
 #          data/ALAN/alan_glow_log_ll.tif                  (glow basemap, from 7_prep)
 # Outputs: out/models/m_useavail_*.rds                     (cached brms fits)
-# Figures: figs/f5_part1_map_insets.{svg,png}   (Figure 5 top half -- combined by hand)
-#          figs/f5_part2_effects.{svg,png}      (Figure 5 bottom half -- combined by hand)
+# Figures: figs/f5_iNaturalist results.{svg,png}   (Figure 5, both halves -- finished by hand)
 #          figs/B_contrasts.{png,svg}                (raw use-vs-available contrasts)
 #          figs/SI_effort_validation.{png,svg}
 #          figs/SI_effectsize_loo.{png,svg}
@@ -109,12 +108,21 @@ cat(sprintf("cor(log1p building height, log1p ALAN): full = %.2f, radar-matched 
 # Exploratory contrasts ----
 collisionColor  <- "#0072B2"   # Okabe-Ito blue: colourblind-safe, distinct from the green buffer
 backgroundColor <- "grey45"
+# Single source of truth for the two use-availability classes: each label is paired with
+# its colour here, and the factor helper below derives its levels from these same names.
+# So editing a label can't desync it from scale_colour_manual() -- the name mismatch that
+# silently drops a class from the legend (the "factor bug"). `used == 1` is the collision
+# class (first entry); `used == 0` the background class (second).
 sampleColors <- c(
   "collision site"         = collisionColor,
   "background (available)" = backgroundColor
 )
-labelSample <- function(used) factor(used, levels = c(0, 1),
-                                     labels = c("background (available)", "collision site"))
+# Map a 0/1 `used` vector to the labelled factor. collisions_first sets legend/stack order.
+sampleFactor <- function(used, collisions_first = TRUE) {
+  labs <- names(sampleColors)[c(2, 1)][used + 1]   # used 0 -> background, used 1 -> collision
+  factor(labs, levels = if (collisions_first) names(sampleColors) else rev(names(sampleColors)))
+}
+labelSample <- function(used) sampleFactor(used, collisions_first = FALSE)
 
 # Building height: collisions vs the effort background.
 (p_bh_density <- ggplot(model_data, aes(x = building_height, colour = labelSample(used))) +
@@ -245,16 +253,12 @@ if (exists("stations")) {
 }
 
 # Figures ----
-# Report-quality drafts. Colours reuse sampleColors; "#159367" marks the buffer.
 
-## Sampling design map ----
-# North and South America land with subtle state/province boundaries and the Great
+## Figure 5: sampling design map + conditional effects -------
+### Sampling design map ----
+# North and South America with state/province boundaries and the Great
 # Lakes, the 100-km "available" buffer, background points (grey), and collisions
-# (blue) on top. Projected to a North America Lambert azimuthal equal-area (matches
-# the geodesic buffer, so the radii read as circles). State lines and lakes are
-# pulled with ne_download() and cached to tmp/. State lines are 1:10m because the
-# 1:50m layer omits Mexico's states. South America is included so the northern part
-# that falls in frame gets its land, borders, and admin-1 lines (coord_sf clips the rest).
+# (blue) on top. 
 na_land <- ne_countries(scale = "medium", returnclass = "sf") |>
   filter(continent %in% c("North America", "South America"))
 if (!file.exists("tmp/ne_state_lines_10m.rds")) {
@@ -269,9 +273,7 @@ if (!file.exists("tmp/ne_lakes.rds")) {
 na_lakes <- readRDS("tmp/ne_lakes.rds")
 proj_na <- "+proj=laea +lat_0=45 +lon_0=-100 +datum=WGS84 +units=m +no_defs"
 
-# The map is drawn on the ALAN surface itself: light is the dominant driver, so the
-# basemap doubles as the sampling-design map and as a picture of the covariate. Dark
-# base with a magma ramp; unlit land and ocean are both 0 radiance, hence near-black.
+# Draw on the ALAN surface.
 base_dk  <- "#03010a"
 col_bg   <- "#E8EEF7"   # background (available) points, insets only
 col_coll <- "#5AB0FF"   # collisions: luminous blue, reads against the glow
@@ -293,7 +295,7 @@ themeDark <- function() theme_void(base_size = 8) + theme(
   plot.background  = element_rect(fill = base_dk, colour = NA),
   panel.background = element_rect(fill = base_dk, colour = NA),
   legend.title = element_text(colour = "grey85", size = 7),
-  legend.text  = element_text(colour = "grey75", size = 6),
+  legend.text  = element_text(colour = "grey75", size = 7),  # match lower-panel axis text (f5_axis)
   plot.margin  = margin(1, 1, 1, 1))
 
 # Per-collision buffers; the union is the "available" region. Only the circles are
@@ -321,18 +323,15 @@ boxPoly <- function(w) st_as_sf(st_sfc(st_polygon(list(rbind(
   geom_sf(data = na_land, fill = NA, colour = "grey30", linewidth = 0.12) +
   geom_sf(data = background_region, aes(colour = "100-km available region"),
           fill = NA, linewidth = 0.2, show.legend = "line") +
-  # One-row, fully transparent point layers. The records themselves are drawn only in
-  # the insets, where they are legible, but their symbols still need a key; these
-  # layers render nothing and exist purely to populate the legend.
+
   geom_sf(data = collisions_sf[1, ], aes(colour = "Bat collision"),
           alpha = 0, size = 0.1, show.legend = "point") +
   geom_sf(data = background_sf[1, ], aes(colour = "Background (available)"),
           alpha = 0, size = 0.1, show.legend = "point") +
   geom_sf(data = boxPoly(winA), fill = NA, colour = winA$col, linewidth = 0.4) +
   geom_sf(data = boxPoly(winB), fill = NA, colour = winB$col, linewidth = 0.4) +
-  # Point and line layers share this scale, so every key would otherwise draw both
-  # glyphs (a dot with a line through it). override.aes takes one value per key:
-  # hide the line on the two record keys, hide the dot on the region key.
+
+    
   scale_colour_manual(NULL, values = mapKeys, breaks = names(mapKeys),
                       guide = guide_legend(order = 2, override.aes = list(
                         alpha    = 1,
@@ -369,7 +368,7 @@ insetPanel <- function(w) {
 f_insetA <- insetPanel(winA); f_insetB <- insetPanel(winB)
 # These are not saved alone; they enter the combined figure below as panels (a)-(c).
 
-## Conditional-effect panels of the top model (building height + ALAN + season + night traffic) ----
+### Conditional-effect panels of the top model (building height + ALAN + season + night traffic) ----
 ce <- conditional_effects(m_useavail_radar_all)
 # Recompute the traffic effect on a log-spaced grid (other covariates held at their
 # mean, as conditional_effects does) so the line is smooth on the log axis instead
@@ -413,7 +412,7 @@ cePanel <- function(v, logx = FALSE, log1px = FALSE, dat = NULL, y_accuracy = NU
     g <- g +
       geom_rug(data = dat[dat$used == 0, ], aes(x = .data[[v]]), inherit.aes = FALSE,
                sides = "b", colour = backgroundColor, alpha = 0.12,
-               length = unit(0.03, "npc")) +
+               length = unit(0.05, "npc")) +
       geom_rug(data = dat[dat$used == 1, ], aes(x = .data[[v]]), inherit.aes = FALSE,
                sides = "t", colour = collisionColor, alpha = 0.5,
                length = unit(0.05, "npc"))
@@ -432,62 +431,55 @@ cePanel <- function(v, logx = FALSE, log1px = FALSE, dat = NULL, y_accuracy = NU
   g
 }
 
+### Combined main figure (Figure 5) ----
 
-## Combined main figure (Figure 5) ----
-# Row 1: the sampling design on the ALAN surface -- the map (a) with the two zoom
-# insets (b, c) that show the effort-weighted background points at a scale where they
-# are legible. Rows 2-3: the four modelled conditional effects as a 2x2 block (d-g).
-# Sized for a full journal page (max width ~180 mm). The species-composition panel
-# that used to open this figure now lives in Figure 4c, with the descriptive material.
-# Built as two patchworks and stacked, so the effect panels stay equal-width and
-# aligned regardless of the map's fixed aspect ratio; tags are set per panel because
-# auto-tagging treats each nested patchwork as one unit.
 p_map     <- f_map     + labs(tag = "(a)") + theme(plot.tag = element_text(colour = "grey85"))
 p_insetA  <- f_insetA  + labs(tag = winA$tag) + theme(plot.tag = element_text(colour = winA$col))
 p_insetB  <- f_insetB  + labs(tag = winB$tag) + theme(plot.tag = element_text(colour = winB$col))
-# y_accuracy gives the effect panels the same-width y labels, so their panel regions
-# come out equal.
-p_bh      <- cePanel("building_height", dat = radar_data, y_accuracy = 0.001) + labs(tag = "(d)")
-p_alan    <- cePanel("alan", log1px = TRUE, dat = radar_data, y_accuracy = 0.001) + labs(tag = "(e)")
-p_yday    <- cePanel("yday", dat = radar_data, y_accuracy = 0.001)            + labs(tag = "(f)")
-p_traffic <- cePanel("traffic", logx = TRUE, dat = radar_data, y_accuracy = 1e-4) + labs(tag = "(g)")
 
-# Figure 5 is assembled BY HAND from the two halves exported below. patchwork cannot
-# reconcile the margins of the dark theme_void() map panels -- whose plot.background
-# paints their whole layout cell, so they read full-bleed -- with the axis-bearing
-# effect panels, which their axes inset. Flattening the nested patchworks into a single
-# `design` made no difference, so the two halves are exported separately as SVG and
-# combined in a vector editor. Sizes stack directly to 7.1 x 9 in (a full journal page).
-#
-# NOTE: nothing here writes to out/figs/. The publication copy
-# (out/figs/f5_iNaturalist results v3.png) is the hand-assembled one; a script-written
-# copy would silently clobber it.
+p_bh0      <- cePanel("building_height", dat = radar_data, y_accuracy = 0.001) #+ labs(tag = "(d)")
+p_alan0    <- cePanel("alan", log1px = TRUE, dat = radar_data, y_accuracy = 0.001) #+ labs(tag = "(e)")
+p_yday0    <- cePanel("yday", dat = radar_data, y_accuracy = 0.001)            #+ labs(tag = "(f)")
+p_traffic0 <- cePanel("traffic", logx = TRUE, dat = radar_data, y_accuracy = 1e-4) #+ labs(tag = "(g)")
+
 f5_tag  <- theme(plot.tag = element_text(size = 9))
 f5_axis <- theme(axis.text.x = element_text(size = 7))
 p_map     <- p_map     + f5_tag
 p_insetA  <- p_insetA  + f5_tag
 p_insetB  <- p_insetB  + f5_tag
-p_bh      <- p_bh      + f5_tag + f5_axis
-p_alan    <- p_alan    + f5_tag + f5_axis
-p_yday    <- p_yday    + f5_tag + f5_axis
-p_traffic <- p_traffic + f5_tag + f5_axis
+p_bh      <- p_bh0      + f5_tag + f5_axis
+p_alan    <- p_alan0    + f5_tag + f5_axis
+p_yday    <- p_yday0    + f5_tag + f5_axis
+p_traffic <- p_traffic0 + f5_tag + f5_axis
 
-## Figure 5, top half: map (a) + insets (b, c) ----
-# 1.5:1 keeps the map close to its ~0.92 portrait aspect so coord_sf does not letterbox it.
-(f5_top <- p_map + (p_insetA / p_insetB) + plot_layout(widths = c(1.5, 1)))
-ggsave("figs/f5_part1_map_insets.svg", f5_top, width = 7.1, height = 4.19, bg = "white")
-ggsave("figs/f5_part1_map_insets.png", f5_top, width = 7.1, height = 4.19, dpi = 600, bg = "white")
+# Whole figure is 6.5 in wide. Top-half panel widths are pinned in absolute inches so the
+# map (a) exports at ~4.107 in and each inset column (b, c) at ~2.16 in, as measured in
+# Inkscape; the ~0.23 in remainder falls to the inter-panel gap and outer margins.
+f5_top    <- p_map + (p_insetA / p_insetB) +
+  plot_layout(widths = c(4.107/2.16, 1))
+# Bottom 2x2 shares one y-axis label: drop the four repeated per-panel y-titles and
+# add a single centred, rotated label to their left (11 pt, matching the panel axis
+# titles under theme_classic). Widths c(1, 26) give the strip ~0.24 in at 6.5 in wide.
+# plot.margin (default 5.5 pt) sets the gap between patchwork panels; trim it to pull
+# the 2x2 effect plots closer together.
+f5_effects <- p_bh + p_alan + p_yday + p_traffic + plot_layout(nrow = 2) &
+  theme(axis.title.y = element_blank(), plot.margin = margin(2, 2, 2, 2))
+f5_ylab <- wrap_elements(full = grid::textGrob(
+  "Relative probability of collision", rot = 90, gp = grid::gpar(fontsize = 11)))
+f5_bottom <- f5_ylab + f5_effects + plot_layout(widths = c(1, 26))
+ggsave("figs/f5_bottom.png", f5_bottom, width = 6.5, height = (8.06-4.226), bg = "white", dpi = 100)
+ggsave("figs/f5_bottom.svg", f5_bottom, width = 6.5, height = (8.06-4.226), bg = "white")
 
-## Figure 5, bottom half: conditional effects, 2x2 (d-g) ----
-(f5_bottom <- p_bh + p_alan + p_yday + p_traffic + plot_layout(nrow = 2))
-ggsave("figs/f5_part2_effects.svg", f5_bottom, width = 7.1, height = 4.81, bg = "white")
-ggsave("figs/f5_part2_effects.png", f5_bottom, width = 7.1, height = 4.81, dpi = 600, bg = "white")
+# Stack the two halves into a single SVG. Heights track each half's native aspect.
+f5_combined <- f5_top / f5_bottom + plot_layout(heights = c(1, 0.9))
+ggsave("figs/f5_iNaturalist results.png", f5_combined, width = 6.5, height = 9, dpi = 200, bg = "white")
+ggsave("figs/f5_iNaturalist results.svg", f5_combined, width = 6.5, height = 9, bg = "white")
+
 
 
 ## Raw use-vs-available contrasts ----
 contrast_data <- radar_data |>
-  mutate(sample = factor(used, levels = c(1, 0),
-                         labels = c("collision site", "background (available)")))
+  mutate(sample = sampleFactor(used, collisions_first = TRUE))
 contrastPanel <- function(x, xlab, logx = FALSE) {
   g <- ggplot(contrast_data, aes(.data[[x]], colour = sample)) +
     geom_density() +
@@ -497,14 +489,13 @@ contrastPanel <- function(x, xlab, logx = FALSE) {
   if (logx) g <- g + scale_x_log10()
   g
 }
-(f_contrasts <- contrastPanel("building_height", "Building height (m)") +
+f_contrasts <- contrastPanel("building_height", "Building height (m)") +
     contrastPanel("alan", "Nighttime radiance (ALAN)") +
     contrastPanel("yday", "Day of year") +
     contrastPanel("traffic", "Nightly migration traffic (night prior)", logx = TRUE) +
     plot_layout(nrow = 2, guides = "collect") &
-    theme(legend.position = "bottom"))
+    theme(legend.position = "bottom")
 ggsave("figs/B_contrasts.png", f_contrasts, width = 8, height = 6, dpi = 600)
-ggsave("figs/B_contrasts.svg", f_contrasts, width = 8, height = 6)
 
 ## SI: background reproduces observer effort; collisions do not ----
 effort_month <- fread("data/derived/inat_background_effort.csv")[
@@ -517,15 +508,14 @@ month_shares <- rbindlist(list(
   data.table(m = month(points[used == 1, date]))[
     , .N, by = m][, .(m, share = N / sum(N), src = "collisions")]
 ), use.names = TRUE)
-(f_effort <- ggplot(month_shares, aes(m, share, colour = src)) +
+f_effort <- ggplot(month_shares, aes(m, share, colour = src)) +
     geom_line(linewidth = 0.8) +
     scale_x_continuous("Month", breaks = 1:12, labels = month.abb) +
     scale_y_continuous("Share of records") +
     scale_colour_manual(NULL, values = c("effort (reference)" = "grey60",
                                          "background" = "#159367",
-                                         "collisions" = collisionColor)))
+                                         "collisions" = collisionColor))
 ggsave("figs/SI_effort_validation.png", f_effort, width = 7, height = 4, dpi = 600, bg = "white")
-ggsave("figs/SI_effort_validation.svg", f_effort, width = 7, height = 4)
 
 ## SI: effect sizes and model comparison ----
 # (a) comparable effect sizes: the odds ratio for an interquantile (10th -> 90th
@@ -563,11 +553,10 @@ p_loo <- ggplot(loo_tab, aes(elpd_diff, model)) +
   geom_pointrange(aes(xmin = elpd_diff - se_diff, xmax = elpd_diff + se_diff)) +
   scale_x_continuous(expression(Delta * " elpd (vs best model)")) +
   ylab(NULL)
-(f_effectsize_loo <- p_coef + p_loo +
+f_effectsize_loo <- p_coef + p_loo +
    plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-   theme(plot.tag = element_text(size = 10)))
+   theme(plot.tag = element_text(size = 10))
 ggsave("figs/SI_effectsize_loo.png", f_effectsize_loo, width = 10, height = 3.2, dpi = 600, bg = "white")
-ggsave("figs/SI_effectsize_loo.svg", f_effectsize_loo, width = 10, height = 3.2)
 
 
 ## SI: is there enough night-to-night variation in traffic to matter? (Supplemental Figure X) ----

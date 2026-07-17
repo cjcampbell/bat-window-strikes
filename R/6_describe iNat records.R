@@ -10,7 +10,6 @@ library(data.table)
 
 source("R/0_funs.R")
 
-
 taxTree <- fread("data/iNat_observations_taxTree.csv")
 world <- ne_countries(scale = "medium", returnclass = "sf") |> 
   sf::st_transform(myproj) |> 
@@ -18,7 +17,6 @@ world <- ne_countries(scale = "medium", returnclass = "sf") |>
 mygrid <- sf::st_make_grid(world, cellsize = 500) |>
   st_as_sf() |> 
   dplyr::mutate(grid_id = row_number())
-
 
 # Load manually-checked data
 df <- read.csv("data/iNat_observations_tidy_manualChecks.csv") |> 
@@ -34,7 +32,6 @@ df <- read.csv("data/iNat_observations_tidy_manualChecks.csv") |>
   left_join(taxTree, by = c("scientific_name" = "search")) |>
   # Unite with spatial data
   st_join(world)
-
 
 # Create table with observation IDs and license info for retained obs. ------
 # This is intended for sharing without violating license agreements.
@@ -519,35 +516,27 @@ speciesLabelsF4 <- c("Lasiurus borealis"         = "*Lasiurus borealis*",
   ))
 
 
-# Figure 4 combo ------
-# (a) global map with the North America box, (b) hour of observation (global), then
-# (c) North American record timing -- global to regional, handing off to Figure 5.
-F4_combo <- iNat_map_grid_circle + p_timeOfDay + p_NoAm_timing +
-  plot_layout(
-  design = "
-    1
-    2
-    3
-    ",
-  heights = c(1.2,1,1),
-  axis_titles = "collect_y"
-) +
-  plot_annotation(
-    tag_levels = 'a', tag_prefix = "(", tag_suffix = ")") &
-  # Standardize legends across all three panels: uniform key box, uniform text size, and
-  # titles trimmed to 9 pt so they no longer tower over the body / read large next to
-  # Figure 5. element_markdown keeps panel (c)'s italic species names.
-  theme(
-    plot.tag.position  = c(0.1,0.95),
-    plot.tag = element_text(size = 10),
-    legend.title         = element_text(size = 9),
-    legend.text          = ggtext::element_markdown(size = 9),
-    legend.key.size      = unit(12, "pt"),
-    legend.key.spacing.y = unit(2, "pt")
-  )
+# Figure 4 export ------
+f4_theme <- theme(
+  plot.tag             = element_text(size = 10),
+  legend.title         = element_text(size = 9),
+  legend.text          = ggtext::element_markdown(size = 9),
+  legend.key.size      = unit(12, "pt"),
+  legend.key.spacing.y = unit(2, "pt")
+)
 
-ggsave(F4_combo, filename =  "figs/F4_combo.png", dpi = 400, width = 6.5, height = 5.5)
-ggsave(F4_combo, filename =  "figs/F4_combo.svg", width = 6.5, height = 5.5)
+## Panel (a): global map, exported alone ----
+f4_a <- iNat_map_grid_circle + labs(tag = "(a)") +
+  f4_theme + theme(plot.tag.position = c(0.08, 0.95))
+ggsave("figs/f4_a_map.svg", f4_a, width = 6.5, height = 3.0, bg = "white")
+ggsave("figs/f4_a_map.png", f4_a, width = 6.5, height = 3.0, dpi = 200, bg = "white")
+
+## Panels (b) + (c): hour-of-day and NoAm timing, stacked and aligned ----
+f4_bc <- (p_timeOfDay + labs(tag = "(b)")) / (p_NoAm_timing + labs(tag = "(c)")) +
+  plot_layout(axis_titles = "collect_y") &
+  f4_theme & theme(plot.tag.position = c(0.08, 0.95))
+ggsave("figs/f4_bc.svg", f4_bc, width = 6.5, height = 5.5, bg = "white")
+ggsave("figs/f4_bc.png", f4_bc, width = 6.5, height = 5.5, dpi = 100, bg = "white")
 
 
 
