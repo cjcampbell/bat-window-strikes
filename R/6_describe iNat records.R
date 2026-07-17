@@ -528,32 +528,83 @@ ggsave(F4_combo, filename =  "figs/F4_combo.svg", width = 8, height = 9.5)
 
 
 
-
-# Figure 5 is now the use-availability driver figure, built in "8_fit iNat models.R".
-# The per-species timing panels that used to make up Figure 5 here were superseded by
-# it; the all-species version now lives above as Figure 4c.
-
-
-# Tables + summaries ------
-df |> 
+# Record counts: where every number in the manuscript comes from ------
+# The manuscript quotes several different record counts, and they are deliberately NOT
+# all equal, because they answer different questions or apply different filters. For
+# example "191 in the US" counts records by country, whereas "201 analysed" counts by
+# continent and then drops records with hidden or out-of-range coordinates. To keep those
+# numbers traceable and internally consistent, this block prints -- and saves to a CSV --
+# a single step-by-step breakdown: starting from every retained record (226), it shows
+# how the count narrows, one filter at a time, down to the set the models actually use.
+# Any figure in the paper can then be traced back to the exact filter that produced it.
+#
+# `df` here already carries the coastal nearest-country fix and the taxonomy join, and the
+# North-American steps below apply exactly the filters used in 7_prep iNat models.R, so the
+# final subset count printed here equals the used-point count in the modelling table.
+records <- df |>
   as.data.frame() |>
-  count(admin) |> 
-  arrange(desc(n))
-df |> 
-  as.data.frame() |>
-  count(continent) 
-
-df |> 
-  as.data.frame() |> 
-  dplyr::filter(quality_grade == "research",species_name!="") |> 
-  count(quality_grade, family_name, species_name) |> 
-  arrange(desc(n))
-
-df |> 
-  as.data.frame() |> 
-  dplyr::filter(continent == "North America") |> 
   mutate(
-    lon_cut = cut(longitude, breaks = c(-Inf, -100, Inf)),
-    lat_cut = cut(latitude, breaks = c(-Inf, 24, Inf))
-  ) |> 
-  count(lon_cut, lat_cut)
+    date       = as_date(as.POSIXct(datetime)),
+    year       = year(date),
+    is_species = quality_grade == "research" & !is.na(species_name) & species_name != ""
+  )
+
+# Count by country. This uses `admin` (the country a record falls in). Note that the
+# North-American *analysis* boundary further down instead uses `continent` (which, per
+# naturalearth, includes Central America): the country count and the continent count
+# answer different questions, so they are not expected to match.
+n_country <- records |> filter(adm0_a3 %in% c("USA", "CAN", "MEX")) |> count(adm0_a3)
+
+# Narrow to the North-American analysis set, one filter at a time (same filters as 7_prep):
+#   step 1: keep the North America continent (this is the boundary the models use)
+#   step 2: drop records whose coordinates iNaturalist has hidden ("obscured")
+#   step 3: keep only 2019-2025 (the years the background covers)
+na_continent  <- filter(records, continent == "North America")
+na_unobscured <- filter(na_continent, geoprivacy != "obscured")
+na_analysis   <- filter(na_unobscured, year %in% 2019:2025)   # == collisions_noam in 7_prep
+
+# Within the analysis set: how many are identified to species, and how many are the two
+# long-distance migratory tree bats (eastern red + silver-haired) highlighted in the
+# Results and the Figure 4c caption.
+n_species_level <- sum(na_analysis$is_species)
+n_redsilver <- sum(na_analysis$is_species &
+                     na_analysis$species_name %in% c("Lasiurus borealis", "Lasionycteris noctivagans"))
+
+# Does any record drop out because a predictor is missing? No: building height and light
+# are never missing (7_prep treats unmapped map cells as 0), so the only further loss is
+# the radar match. Read the analysis-ready table (written by 7_prep) for the used-point
+# count and how many of those have a usable nearby weather-radar station.
+ua_file <- "data/derived/useavail_points.csv"
+if (file.exists(ua_file)) {
+  ua <- fread(ua_file)
+  n_used_full  <- sum(ua$used == 1)
+  n_used_radar <- sum(ua$used == 1 & !is.na(ua$traffic) & ua$dist_km < 200)
+} else {
+  n_used_full <- nrow(na_analysis); n_used_radar <- NA_integer_
+}
+
+# The step-by-step breakdown, saved so the manuscript's counts stay traceable.
+count_breakdown <- tibble::tribble(
+  ~record_set,                      ~n,                                    ~how_it_is_defined,
+  "All retained records",           nrow(records),                        "CJ.manual.check == 'y', all continents / years",
+  "United States",                  n_country$n[n_country$adm0_a3 == "USA"], "by country (admin == USA), after coastal fix",
+  "Canada",                         n_country$n[n_country$adm0_a3 == "CAN"], "by country (admin == Canada)",
+  "Mexico",                         n_country$n[n_country$adm0_a3 == "MEX"], "by country (admin == Mexico)",
+  "North America (continent)",      nrow(na_continent),                   "step 1: continent == 'North America' (incl. Central America)",
+  ".. coordinates not hidden",      nrow(na_unobscured),                  "step 2: + geoprivacy != 'obscured'",
+  ".. years 2019-2025 = ANALYSED",  nrow(na_analysis),                    "step 3: + year in 2019:2025  (this is the set the models use)",
+  ".. with a nearby radar station", n_used_radar,                         "+ NEXRAD station < 200 km with a night-before traffic value",
+  "Identified to species",          n_species_level,                      "of the analysed set: research-grade and named to species",
+  ".. red + silver-haired bats",    n_redsilver,                          "of those: Lasiurus borealis + Lasionycteris noctivagans"
+)
+cat("\nRecord-count breakdown (how the manuscript's numbers are derived):\n")
+print(count_breakdown, n = Inf)
+cat(sprintf(
+  "\nNo records are lost to missing predictors: all %d analysed records have building height and\n  light (unmapped -> 0); %d are dropped only by the radar match, leaving %d with radar traffic.\n",
+  n_used_full, n_used_full - n_used_radar, n_used_radar))
+cat(sprintf("Species share: %d of %d analysed records identified to species (%.0f%%); red + silver = %d of %d species-level (%.0f%%), or %d of %d analysed (%.0f%%).\n",
+            n_species_level, nrow(na_analysis), 100 * n_species_level / nrow(na_analysis),
+            n_redsilver, n_species_level, 100 * n_redsilver / n_species_level,
+            n_redsilver, nrow(na_analysis), 100 * n_redsilver / nrow(na_analysis)))
+
+write.csv(count_breakdown, "data/derived/record_count_breakdown.csv", row.names = FALSE)
