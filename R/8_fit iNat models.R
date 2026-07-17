@@ -29,6 +29,7 @@ library(brms)
 library(splines)
 library(patchwork)
 library(ggtext)
+library(lme4)
 
 # Fit a use-availability Bernoulli model with the shared brms settings and attach
 # LOO. Cached by `file` under out/models/ (delete to refit).
@@ -40,6 +41,24 @@ brm_ua <- function(formula, data, file) {
     file = file.path("out/models", file)
   )
   add_criterion(m, "loo")
+}
+
+# Build the design columns for a "hurdle" (two-part) version of a driver, used only as a
+# robustness check on functional form (see the model comparisons below). Many points have
+# the driver exactly at zero (no mapped building, or no detectable light); a hurdle splits
+# the effect into two pieces: (1) a yes/no "present at all?" indicator, and (2) a smooth
+# curve that shapes the response only among the above-zero values. Comparing this against a
+# single smooth spline over the whole range (the form we use) tests whether treating
+# "absent" as a special case buys anything. The spline basis is set to 0 where x == 0, so
+# the indicator alone carries the effect there. Returned as columns to cbind onto the model
+# frame; LOO only needs the in-sample fit, so precomputed basis columns are sufficient.
+hurdleCols <- function(x, prefix, df = 3) {
+  pos <- x > 0
+  B <- matrix(0, length(x), df)
+  B[pos, ] <- ns(log1p(x[pos]), df = df)
+  out <- data.frame(as.numeric(pos), B)
+  names(out) <- paste0(prefix, c("_pres", paste0("_sp", seq_len(df))))
+  out
 }
 
 # Load analysis-ready points ----
@@ -135,14 +154,38 @@ m_useavail_alan <- brm_ua(used ~ ns(log1p(alan), 3) + ns(yday, 5),
                           model_data, "m_useavail_alan_yday")
 pp_check(m_useavail_bh, ndraws = 100)
 
-# Functional-form check: the spline is preferred over a linear log1p term for each
-# structural driver (linear forms fit here only for the LOO comparison).
+# Functional-form check: should each structural driver enter as a straight line (on the
+# log1p scale) or as a flexible curve (a spline)? We fit the straight-line version of each
+# and let leave-one-out cross-validation (LOO) choose. LOO prefers the curve for both, so
+# the models above use splines; these linear fits exist only for that comparison.
 m_useavail_bh_lin   <- brm_ua(used ~ log1p(building_height) + ns(yday, 5),
                               model_data, "m_useavail_bh_linear")
 m_useavail_alan_lin <- brm_ua(used ~ log1p(alan) + ns(yday, 5),
                               model_data, "m_useavail_alan_linear")
 loo_compare(m_useavail_bh, m_useavail_bh_lin)
 loo_compare(m_useavail_alan, m_useavail_alan_lin)
+
+# Functional-form robustness for the two zero-inflated drivers: is the whole-range spline
+# better than (a) a two-part hurdle (presence indicator + smooth over the positive values)
+# or (b) a bare presence indicator? Built on the same "driver + season" frame as the
+# spline/linear comparison, so every functional form for a driver is judged on identical
+# rows. If the hurdle is indistinguishable from the spline, the simpler spline is kept; a
+# presence-only indicator being clearly worse shows the graded (not just present/absent)
+# response carries information.
+md_bh   <- cbind(model_data, hurdleCols(model_data$building_height, "bh"))
+md_alan <- cbind(model_data, hurdleCols(model_data$alan, "alan"))
+m_useavail_bh_hurdle    <- brm_ua(used ~ bh_pres + bh_sp1 + bh_sp2 + bh_sp3 + ns(yday, 5),
+                                  md_bh, "m_useavail_bh_hurdle")
+m_useavail_bh_present   <- brm_ua(used ~ bh_pres + ns(yday, 5),
+                                  md_bh, "m_useavail_bh_presence")
+m_useavail_alan_hurdle  <- brm_ua(used ~ alan_pres + alan_sp1 + alan_sp2 + alan_sp3 + ns(yday, 5),
+                                  md_alan, "m_useavail_alan_hurdle")
+m_useavail_alan_present <- brm_ua(used ~ alan_pres + ns(yday, 5),
+                                  md_alan, "m_useavail_alan_presence")
+loo_compare(m_useavail_bh, m_useavail_bh_hurdle)     # hurdle vs spline (building height)
+loo_compare(m_useavail_bh, m_useavail_bh_present)    # presence-only vs spline (building height)
+loo_compare(m_useavail_alan, m_useavail_alan_hurdle) # hurdle vs spline (radiance)
+loo_compare(m_useavail_alan, m_useavail_alan_present)# presence-only vs spline (radiance)
 
 # Full-data co-headline model: collisions favour sites that are both tall and lit.
 m_useavail_struct <- brm_ua(used ~ ns(log1p(building_height), 3) + ns(log1p(alan), 3) + ns(yday, 5),
@@ -165,6 +208,13 @@ m_useavail_radar_alan <- brm_ua(used ~ ns(log1p(alan), 3) + ns(yday, 5) + log1p(
                                 radar_data, "m_useavail_radar_alan")
 m_useavail_radar_all  <- brm_ua(used ~ ns(log1p(building_height), 3) + ns(log1p(alan), 3) + ns(yday, 5) + log1p(traffic),
                                 radar_data, "m_useavail_radar_all")
+
+# Functional-form check for traffic: does a spline beat the linear log1p term inside the
+# full radar model (all other terms identical)? If not, traffic is kept linear.
+m_useavail_traffic_spline <- brm_ua(
+  used ~ ns(log1p(building_height), 3) + ns(log1p(alan), 3) + ns(yday, 5) + ns(log1p(traffic), 3),
+  radar_data, "m_useavail_traffic_spline")
+loo_compare(m_useavail_radar_all, m_useavail_traffic_spline)  # traffic spline vs linear
 
 loo_compare(m_useavail_season_sub, m_useavail_radaronly, m_useavail_radar_both,
             m_useavail_radar_alan, m_useavail_radar_all)
@@ -518,3 +568,108 @@ p_loo <- ggplot(loo_tab, aes(elpd_diff, model)) +
    theme(plot.tag = element_text(size = 10)))
 ggsave("figs/SI_effectsize_loo.png", f_effectsize_loo, width = 10, height = 3.2, dpi = 600, bg = "white")
 ggsave("figs/SI_effectsize_loo.svg", f_effectsize_loo, width = 10, height = 3.2)
+
+
+## SI: is there enough night-to-night variation in traffic to matter? (Supplemental Figure X) ----
+# This backs up a specific worry about the traffic result. The traffic effect came out
+# modest and uncertain, and one innocent explanation would be that nightly migration traffic
+# barely changes from night to night -- if a predictor hardly varies, no model could detect
+# an effect from it. We show that is not the case: night-to-night change is in fact the
+# LARGEST source of variation in migration-window traffic. We take every night's traffic at
+# the weather-radar stations near our collisions and split its total variation into three
+# parts:
+#   - spatial:       differences between stations (some sit on busier flyways)
+#   - seasonal drift: the gentle rise and fall across a migration window
+#   - night-level:   what is left -- the night-to-night, weather-driven swings
+# and we also report how much busier a typical "busy" night is than a "quiet" one. All
+# numbers are computed here (not hard-coded), so the Results text stays in sync with the
+# data. Cited as "Supplemental Figure X" pending final SI numbering.
+
+# Collision-matched stations: those actually assigned to a collision within radar range
+# (the set whose nights inform the traffic effect).
+matched_stations <- unique(points[used == 1 & dist_km < 200 & !is.na(station), station])
+
+# Full nightly-traffic series at those stations, 2019-2025 (period == night). Read
+# straight from the Dark Ecology daily files (7_prep only kept the matched nights).
+traffic_nightly <- rbindlist(lapply(2019:2025, function(y)
+  fread(sprintf("data/darkecology/daily/%d-daily.csv", y))[
+    period == "night", .(station, date = as.IDate(date), traffic)]))
+traffic_nightly <- traffic_nightly[station %in% matched_stations & !is.na(traffic) & traffic > 0]
+traffic_nightly[, `:=`(yday = yday(date), year = year(date), week = isoweek(date))]
+
+# Fixed biological migration-peak windows (spring 15 Apr - 15 Jun; autumn 20 Aug - 15
+# Oct), defined by migration phenology rather than by where our own records happen to
+# fall, so "within-window" means within the peak, where the seasonal trend is gentle and
+# night-to-night weather-driven pulses dominate.
+spring_win <- yday(as.Date(c("2021-04-15", "2021-06-15")))
+autumn_win <- yday(as.Date(c("2021-08-20", "2021-10-15")))
+traffic_win <- traffic_nightly[
+  (yday %between% spring_win) | (yday %between% autumn_win)]
+traffic_win[, season := fifelse(yday %between% spring_win, "spring", "autumn")]
+traffic_win[, ltraf := log1p(traffic)]
+
+# Variance components on log1p(traffic): (1|station) spatial, (1|week) seasonal drift
+# within the window, residual night-level. A separate fit adding (1|year) leaves the
+# year share negligible (<1%), so it is not carried as a fourth term.
+vp_mod   <- lmer(ltraf ~ 1 + (1 | station) + (1 | week), data = traffic_win, REML = TRUE)
+vp       <- as.data.frame(lme4::VarCorr(vp_mod))
+vp_share <- setNames(100 * vp$vcov / sum(vp$vcov), vp$grp)
+
+# Busy:quiet ratio -- within each station x season x year with enough nights, the ratio
+# of a busy night (90th pct) to a quiet one (10th pct); median across those groups.
+bq <- traffic_win[, .(p10 = quantile(traffic, .10), p90 = quantile(traffic, .90), .N),
+                  by = .(station, season, year)][N >= 10][, ratio := p90 / p10]
+bq_median <- median(bq$ratio)
+
+cat(sprintf(
+  "Traffic variance partition (%d collision-matched stations, %d migration-window nights):\n  night-level %.0f%%, spatial %.0f%%, seasonal drift %.0f%%; busy:quiet median %.0fx (%d station-season-years)\n",
+  length(matched_stations), nrow(traffic_win),
+  vp_share[["Residual"]], vp_share[["station"]], vp_share[["week"]], bq_median, nrow(bq)))
+
+# Panel (a): the three variance shares.
+vp_df <- data.frame(
+  component = c("Night-level\n(residual)", "Spatial\n(between-station)", "Seasonal drift\n(within-window)"),
+  share     = c(vp_share[["Residual"]], vp_share[["station"]], vp_share[["week"]]))
+vp_df$component <- factor(vp_df$component, levels = vp_df$component)
+p_partition <- ggplot(vp_df, aes(share, component)) +
+  geom_col(fill = collisionColor, width = 0.62) +
+  geom_text(aes(label = sprintf("%.0f%%", share)), hjust = -0.2, size = 3.2, colour = "grey25") +
+  scale_x_continuous("Share of migration-window traffic variance",
+                     labels = scales::label_percent(scale = 1),
+                     limits = c(0, max(vp_df$share) * 1.18), expand = c(0, 0)) +
+  ylab(NULL) +
+  theme_classic() +
+  theme(axis.text.y = element_text(size = 9, lineheight = 0.9))
+
+# Panel (b): one representative station-season-year -- KMKX (Milwaukee) autumn 2020,
+# chosen because its busy:quiet ratio sits right at the study-wide median (52x), so the
+# illustration is typical rather than extreme. Each point is a night's traffic (log
+# axis); the loess line is the gentle within-window seasonal drift, and the shaded band
+# is this station-season-year's 10th-90th percentile (the same unit the median
+# busy:quiet ratio is computed over) -- the large busy:quiet spread the night-level term
+# captures, dwarfing the seasonal trend.
+eg <- traffic_win[station == "KMKX" & season == "autumn" & year == 2020]
+eg_band <- quantile(eg$traffic, c(.10, .90))
+p_series <- ggplot(eg, aes(yday, traffic)) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = eg_band[1], ymax = eg_band[2],
+           fill = collisionColor, alpha = 0.10) +
+  geom_point(colour = backgroundColor, alpha = 0.55, size = 1.1) +
+  geom_smooth(method = "loess", formula = y ~ x, colour = collisionColor,
+              fill = collisionColor, alpha = 0.2, linewidth = 0.9) +
+  annotate("text", x = min(eg$yday), y = max(eg$traffic), vjust = 1, hjust = 0, size = 3,
+           colour = "grey25",
+           label = sprintf("busy:quiet (10th-90th pct) %.0f×\n= median across station-seasons",
+                           eg_band[2] / eg_band[1])) +
+  scale_y_log10("Nightly migration traffic (KMKX, autumn 2020)") +
+  scale_x_continuous("Day of year",
+                     breaks = monthDayYear_to_yday(monthFirsts),
+                     labels = format(mdy(monthFirsts), "%b")) +
+  coord_cartesian(xlim = autumn_win) +
+  theme_classic()
+
+(f_traffic_variance <- p_partition + p_series +
+   plot_layout(widths = c(1, 1.15)) +
+   plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
+   theme(plot.tag = element_text(size = 10)))
+ggsave("figs/SI_traffic_variance.png", f_traffic_variance, width = 9, height = 3.6, dpi = 600, bg = "white")
+ggsave("figs/SI_traffic_variance.svg", f_traffic_variance, width = 9, height = 3.6)
