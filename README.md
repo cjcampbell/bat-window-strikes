@@ -10,12 +10,15 @@ into two tiers:
 
 **Tier 1 — Reproducible from shared data:** Scripts 2–4 read only from
 `data/derived/` (plus public APIs for map data in script 4) and reproduce all
-Kansas City analyses and figures.
+Kansas City analyses and figures. Script 8 fits the use-vs-available
+(collision-driver) models and figures from `data/derived/useavail_points.csv`;
+its fitted models are cached in `out/models/`.
 
-**Tier 2 — Data assembly pipeline:** Scripts 5–6 download and manually curate
-iNaturalist records. They require raw data files, API access, and manual review
-steps not included in this repository. `data/derived/iNaturalist records.csv`
-is the shareable output of this pipeline.
+**Tier 2 — Data assembly pipeline:** Scripts 5–7 download and manually curate
+iNaturalist records and assemble the modeling table. They require raw data files,
+API access, environmental rasters (nighttime radiance/ALAN, building height),
+NEXRAD radar data, and manual review steps not included in this repository. Their
+shareable outputs are the files in `data/derived/`.
 
 Script 1 tidies the raw KC survey spreadsheets into `data/derived/`; it can be
 skipped if starting from the shared derived files.
@@ -28,19 +31,25 @@ skipped if starting from the shared derived files.
 | `3_model KC record timing.R` | Models predicting bat discoveries by day of year from KC surveys. |
 | `4_map KC records.R` | Maps of KC survey records. Requires local NLCD data for the regional land cover map; see comments in script for directory structure. |
 | `5_get iNat records.R` | Download candidate records from iNaturalist. After manual cleaning and removal of unlicensed data, the shareable output is `data/derived/iNaturalist records.csv`. |
-| `6_analyze iNat records.R` | Analysis and figures from iNaturalist records. Requires `data/iNat_observations_tidy_manualChecks.csv` (not publicly archived due to licensing constraints). |
+| `6_describe iNat records.R` | Descriptive analysis and figures from the curated iNaturalist records (global distribution maps, seasonal/diel timing). Requires `data/iNat_observations_tidy_manualChecks.csv` (not publicly archived due to licensing constraints). |
+| `7_prep iNat models.R` | Assemble the use-vs-available modeling table: download an effort-weighted iNaturalist background sample, extract environmental covariates (building height, nighttime radiance/ALAN), and match nightly bird-migration traffic (NEXRAD radar) to each point. Writes `data/derived/inat_background.csv`, `inat_background_effort.csv`, and `useavail_points.csv`. Requires API access and local raster/radar data. |
+| `8_fit iNat models.R` | Fit and summarize the use-vs-available (collision-driver) models from `data/derived/useavail_points.csv` and produce the driver figures. Fitted models are cached in `out/models/` (`.rds`). |
 
 
 ## data/derived/
 
 Tidied data created or synthesized in the course of this study. **Scripts 2–4
-can be run in full starting from the files in this directory.**
+and 8 can be run in full starting from the files in this directory.**
 
 | File | Description |
 | ---- | ----------- |
 | `structured_surveys_schedule.csv` | Dates of semi-structured surveys in KC. Contains columns: <br> `survey` = Was survey conducted on specified date? (boolean) <br> `date` = Date of survey in yyyy-mm-dd format.<br> `yday` = Day of year of survey (1-365).<br>`yday_bin7` = Day of year of survey, divided into 7-day bins. |
 | `structured_surveys_bats_discovered.csv` | Discovery of bats in KC. Contains columns: <br> `id` = ID of bat discovered (numeric)<br> `date` = Date of discovery in yyyy-mm-dd format.<br> `yday` = Day of year of discovery (1-365).<br> `species` = Species of discovered bat (common name)<br> `plotGroup` = Species group of discovered bat (most common species + Other category)<br> `locality` = Notes on locality of discovery<br> `Status` = Notes on status (typically alive vs. dead)<br> `Description Where Found` = Notes on specific conditions of discovery (e.g., on sidewalk)<br> `Notes` = Additional notes<br> `Building_side` = Cardinal direction of discovery relative to nearest building<br> `paired` = Was another bat found in immediate vicinity (Y/N). |
 | `iNaturalist records.csv` | Retained iNaturalist records from data synthesis. Observations associated with restrictive licenses (e.g., "All rights reserved") are represented by ID and URL only. Contains columns: <br> `id` = iNaturalist ID number of observation<br> `url` = URL of observation <br> `notes` = Notes derived from manual checks of all observations. <br> `scientific_name` = Scientific name of organism from observation. <br> `common_name` = Common name of organism from observation<br> `description` = Text description provided by observer of observation. <br>  `user_login` = Username of user who made observation <br> `observed_on` = Datetime of observation <br> `license` = License of observation (at time of download)<br> `family_name` = Scientific name of family <br> `adm0_a3` = Three-letter country code where record was made <br>  `continent` = Continent of record |
+| `inat_background.csv` | Effort-weighted background ("available") sample of iNaturalist observations across North America, used as the comparison set in the use-vs-available analysis. Contains columns: <br> `id` = iNaturalist observation ID<br> `url` = URL of observation<br> `user_login` = Username of observer<br> `license` = License of observation (at time of download)<br> `observed_on` = Date of observation<br> `datetime` = Datetime of observation<br> `latitude`, `longitude` = Coordinates (WGS84)<br> `positional_accuracy` = Reported coordinate accuracy (m)<br> `coordinates_obscured` = Whether iNaturalist obscured the coordinates<br> `quality_grade` = iNaturalist quality grade<br> `iconic_taxon_name` = Broad taxon group<br> `download_date` = Date accessed. |
+| `inat_background_effort.csv` | Per-cell monthly iNaturalist observation effort, used to weight the background sample in space and time. Contains columns: <br> `month_start` = First day of the month bin<br> `n_effort` = Number of iNaturalist observations in that cell-month<br> `cell_id` = ID of the 2-degree grid cell. |
+| `useavail_points.csv` | Analysis-ready use-vs-available table (one row per collision or background point) underlying the collision-driver models. Contains columns: <br> `used` = 1 for collision sites, 0 for background<br> `longitude`, `latitude` = Coordinates (WGS84)<br> `date` = Date of record<br> `yday` = Day of year (1-365)<br> `year` = Year<br> `building_height` = Extracted building height (m)<br> `alan` = Extracted nighttime radiance (ALAN)<br> `scientific_name` = Species (collisions only; NA for background)<br> `quality_grade` = iNaturalist quality grade<br> `iconic_taxon_name` = Broad taxon group<br> `station` = Nearest NEXRAD radar station<br> `dist_km` = Distance to that station (km)<br> `radar_date` = Date of the radar night matched (night before the record)<br> `traffic` = Nightly bird-migration traffic that night (NEXRAD; deliberate proxy for bat migration activity). |
+| `record_count_breakdown.csv` | Reconciliation of record counts through the data-synthesis pipeline. Contains columns: <br> `record_set` = Named stage or subset<br> `n` = Number of records<br> `how_it_is_defined` = Definition of that set. |
 
 
 ## tmp/
@@ -57,7 +66,7 @@ Core outputs of analyses.
 | Directory | Description |
 | --------- | ----------- |
 | `figs/` | Figures used in manuscript and SI. |
-| `models/` | Fitted model objects generated in `3_model KC record timing.R` (`.rds` format, cached by brms). |
+| `models/` | Fitted model objects (`.rds`, cached by brms) from `3_model KC record timing.R` (Kansas City timing) and `8_fit iNat models.R` (use-vs-available collision-driver models). |
 
 
 ## Session info
