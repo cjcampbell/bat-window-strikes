@@ -143,6 +143,28 @@ collisions <- read.csv("data/iNat_observations_tidy_manualChecks.csv") |>
   filter(CJ.manual.check == "y") |>
   st_join(world)
 
+# Rescue records that land just off the map. A few records sit far enough from land --
+# because iNaturalist hid ("obscured") their coordinates, or because the true site is on a
+# waterfront -- that they fall in the ocean on the country map and come back with no
+# continent. Left alone they would be silently dropped from the analysis, because the North
+# America filter below keeps only continent == "North America". So we snap each to its
+# nearest country, which keeps the analysis on exactly the same records as the descriptive
+# counts in 6_describe iNat records.R. In this dataset the only records this rescues into the
+# North American 2019-2025 subset are three One World Trade Center strikes whose points sit
+# ~250 m offshore in the Hudson; the 150-m building-height cells still capture the
+# surrounding towers (building height 23-42 m), so they extract sensibly, not as open water.
+for (i in which(is.na(collisions$continent))) {
+  nearest <- collisions[i, ] |>
+    st_distance(world) |>
+    which.min()
+  fix <- world[nearest, ] |>
+    as.data.frame() |>
+    select(admin, adm0_a3, continent)
+  collisions$admin[i]     <- fix$admin
+  collisions$adm0_a3[i]   <- fix$adm0_a3
+  collisions$continent[i] <- fix$continent
+}
+
 # Load building-height raster ----
 # GBH2020: global 150-m urban building height from spaceborne lidar (Ma et al.
 # 2023, Scientific Data). ~1.5 GB; can take some time to load. (The ALAN raster is
