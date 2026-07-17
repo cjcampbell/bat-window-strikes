@@ -111,11 +111,15 @@ ggplot() +
   scale_fill_viridis_c(option = "turbo", begin = 0.3)
 
 ## Figure 4a: Main map of all records ----
-# Box marking the North American records carried into panel (c) and Figure 5. Built
-# in lon/lat and segmentized before projecting, so its edges follow the Equal Earth
-# graticule rather than cutting straight across it. The southern edge sits below the
-# southernmost record (Panama, 8.8 degN), making explicit that Central America falls
-# within our definition of North America.
+# North America highlight for panel (c)/Figure 5. Two options are defined; the plot
+# below uses `noam_shade`, with `noam_box` kept so we can swap back to the dashed box.
+#
+# noam_shade: the North America landmass via Natural Earth's `continent` field -- the
+# same definition the analysis uses (continent == "North America"; includes Central
+# America and the Caribbean, excludes South America). Already in myproj via `world`.
+noam_shade <- dplyr::filter(world, continent == "North America")
+# noam_box: previous rectangular region, segmentized in lon/lat so its edges follow the
+# Equal Earth graticule. Overshoots into South America a little; superseded by noam_shade.
 noam_box <- st_bbox(c(xmin = -126, ymin = 5, xmax = -68, ymax = 54), crs = st_crs(proj.wgs84)) |>
   st_as_sfc() |>
   st_segmentize(units::set_units(100, "km")) |>
@@ -124,12 +128,16 @@ noam_box <- st_bbox(c(xmin = -126, ymin = 5, xmax = -68, ymax = 54), crs = st_cr
 # Plot circle in grid.
 iNat_map_grid_circle <- ggplot() +
   geom_sf(world, mapping = aes(), fill = "grey95", color = "grey60", linewidth = 0.1) +
+  # TESTING: translucent tint over the North America landmass (ties to Figure 5's blue),
+  # drawn beneath the record layers so the circles stay crisp on top. To go back to the
+  # dashed box, comment this out and add, as the LAST geom:
+  #   geom_sf(noam_box, mapping = aes(), fill = NA, color = "grey25", linewidth = 0.4,
+  #           linetype = "22")
+  geom_sf(noam_shade, mapping = aes(), fill = "#0072B2", alpha = 0.18, color = NA) +
   geom_sf(df_grid_count_grid, mapping = aes(), color = "grey50", fill = NA) +
   geom_sf(df_grid_count, mapping = aes(size = n), alpha = 0.5, color = "#00B31B") +
-  geom_sf(noam_box, mapping = aes(), fill = NA, color = "grey25", linewidth = 0.4,
-          linetype = "22") +
   scale_size_continuous(
-    "Number of records",
+    "Number of\nrecords",
     breaks = c(1,10,40,70),
   ) +
   scale_y_continuous(expand = c(0,0)) +
@@ -137,9 +145,14 @@ iNat_map_grid_circle <- ggplot() +
   coord_sf(ylim = c(-6792.374, 8000)) +
   theme_void() +
   theme(
-    panel.grid.major = element_line(color = "grey90", linewidth = 0.25)
+    panel.grid.major = element_line(color = "grey90", linewidth = 0.25),
+    # Legend tucked into the empty top-right corner of the map (over the NE Pacific).
+    legend.position = "inside",
+    legend.position.inside = c(0.98, 0.98),
+    legend.justification = c(1, 1)
   )
 ggsave(iNat_map_grid_circle, filename =  "figs/iNat_map_grid_circle.png", dpi = 600)
+ggsave(iNat_map_grid_circle, filename =  "figs/iNat_map_grid_circle.svg", width = 8, height = 8)
 
 ## Map by family -----
 df_grid_family <- df_grid |> 
@@ -236,7 +249,6 @@ df_grid |>
     strip.background = element_blank()
   )
 ggsave("figs/SI_iNatRecords_by_yday.png", dpi = 600, width = 8)
-
 
 
 df_grid |> 
@@ -456,10 +468,12 @@ df_time |>
   # scale_fill_viridis_d(option = "turbo", begin = 0, end = 0.5) +
     scale_fill_manual(
       "Continent",
-      values = rev(c("#001219", "#0a9396", "#94d2bd", "#ABB86D", "#ee9b00",  "#9b2226"))
+      values = rev(c("#001219", "#0a9396", "#94d2bd", "#ABB86D", "#ee9b00",  "#9b2226")),
+      guide = guide_legend(nrow = 2, title.position = "top")
     ) +
   scale_y_continuous("Number of records", expand = expansion(mult=c(0,NA))) +
-    scale_x_continuous("Hour of observation")
+    scale_x_continuous("Hour of observation") +
+  theme(legend.position = "bottom")
 )
 
 ## Figure 4c: North American record timing by species ----
@@ -482,21 +496,23 @@ speciesLabelsF4 <- c("Lasiurus borealis"         = "*Lasiurus borealis*",
                      "Eptesicus fuscus"          = "*Eptesicus fuscus*",
                      "Other/unknown"             = "Other/unknown")
 
-# Legend sits outside on the right, matching panels (a) and (b); an inside legend
-# collides with the autumn peak and with the panel tag (placed inside at top-left).
+# Legend runs along the bottom as a 2x2 block (species names are long), keeping the
+# plotting area clear of the autumn peak and the top-left panel tag.
 (p_NoAm_timing <- dddd_model |>
   mutate(group = factor(group, levels = speciesLevelsF4)) |>
   ggplot() +
   geom_histogram(aes(x = yday, fill = group), binwidth = 14, boundary = 0,
                  colour = "white", linewidth = 0.1) +
-  scale_fill_manual(NULL, values = speciesColorsF4, labels = speciesLabelsF4, drop = FALSE,
-                    guide = guide_legend(ncol = 1, reverse = TRUE)) +
+  scale_fill_manual("Species", values = speciesColorsF4, labels = speciesLabelsF4, drop = FALSE,
+                    guide = guide_legend(ncol = 2, byrow = TRUE, reverse = TRUE,
+                                         title.position = "top")) +
   scale_x_continuous("Day of year", breaks = datebreaks, labels = datelabs,
                      expand = c(0.01, 0)) +
   scale_y_continuous("Number of records", expand = expansion(mult = c(0, 0.08))) +
   theme_classic() +
   theme(
     axis.text.x = element_text(angle = 55, hjust = 1),
+    legend.position = "bottom",
     legend.text = ggtext::element_markdown(size = 9),
     legend.key.size = unit(11, "pt"),
     legend.key.spacing.y = unit(2, "pt")
@@ -513,34 +529,29 @@ F4_combo <- iNat_map_grid_circle + p_timeOfDay + p_NoAm_timing +
     2
     3
     ",
-  heights = c(2,1,1),
+  heights = c(1.2,1,1),
   axis_titles = "collect_y"
 ) +
   plot_annotation(
     tag_levels = 'a', tag_prefix = "(", tag_suffix = ")") &
+  # Standardize legends across all three panels: uniform key box, uniform text size, and
+  # titles trimmed to 9 pt so they no longer tower over the body / read large next to
+  # Figure 5. element_markdown keeps panel (c)'s italic species names.
   theme(
     plot.tag.position  = c(0.1,0.95),
-    plot.tag = element_text(size = 10)
+    plot.tag = element_text(size = 10),
+    legend.title         = element_text(size = 9),
+    legend.text          = ggtext::element_markdown(size = 9),
+    legend.key.size      = unit(12, "pt"),
+    legend.key.spacing.y = unit(2, "pt")
   )
 
-ggsave(F4_combo, filename =  "figs/F4_combo.png", dpi = 600, width = 8, height = 9.5)
-ggsave(F4_combo, filename =  "figs/F4_combo.svg", width = 8, height = 9.5)
+ggsave(F4_combo, filename =  "figs/F4_combo.png", dpi = 400, width = 6.5, height = 5.5)
+ggsave(F4_combo, filename =  "figs/F4_combo.svg", width = 6.5, height = 5.5)
 
 
 
 # Record counts: where every number in the manuscript comes from ------
-# The manuscript quotes several different record counts, and they are deliberately NOT
-# all equal, because they answer different questions or apply different filters. For
-# example "191 in the US" counts records by country, whereas "201 analysed" counts by
-# continent and then drops records with hidden or out-of-range coordinates. To keep those
-# numbers traceable and internally consistent, this block prints -- and saves to a CSV --
-# a single step-by-step breakdown: starting from every retained record (226), it shows
-# how the count narrows, one filter at a time, down to the set the models actually use.
-# Any figure in the paper can then be traced back to the exact filter that produced it.
-#
-# `df` here already carries the coastal nearest-country fix and the taxonomy join, and the
-# North-American steps below apply exactly the filters used in 7_prep iNat models.R, so the
-# final subset count printed here equals the used-point count in the modelling table.
 records <- df |>
   as.data.frame() |>
   mutate(
@@ -549,13 +560,10 @@ records <- df |>
     is_species = quality_grade == "research" & !is.na(species_name) & species_name != ""
   )
 
-# Count by country. This uses `admin` (the country a record falls in). Note that the
-# North-American *analysis* boundary further down instead uses `continent` (which, per
-# naturalearth, includes Central America): the country count and the continent count
-# answer different questions, so they are not expected to match.
+# Count by country.
 n_country <- records |> filter(adm0_a3 %in% c("USA", "CAN", "MEX")) |> count(adm0_a3)
 
-# Narrow to the North-American analysis set, one filter at a time (same filters as 7_prep):
+# Narrow to the North-American analysis set w/ multiple filters
 #   step 1: keep the North America continent (this is the boundary the models use)
 #   step 2: drop records whose coordinates iNaturalist has hidden ("obscured")
 #   step 3: keep only 2019-2025 (the years the background covers)
@@ -563,17 +571,13 @@ na_continent  <- filter(records, continent == "North America")
 na_unobscured <- filter(na_continent, geoprivacy != "obscured")
 na_analysis   <- filter(na_unobscured, year %in% 2019:2025)   # == collisions_noam in 7_prep
 
-# Within the analysis set: how many are identified to species, and how many are the two
-# long-distance migratory tree bats (eastern red + silver-haired) highlighted in the
-# Results and the Figure 4c caption.
+# How many are identified to species?
+# how many are the two long-distance migratory tree bats (eastern red + silver-haired)?
 n_species_level <- sum(na_analysis$is_species)
 n_redsilver <- sum(na_analysis$is_species &
                      na_analysis$species_name %in% c("Lasiurus borealis", "Lasionycteris noctivagans"))
 
-# Does any record drop out because a predictor is missing? No: building height and light
-# are never missing (7_prep treats unmapped map cells as 0), so the only further loss is
-# the radar match. Read the analysis-ready table (written by 7_prep) for the used-point
-# count and how many of those have a usable nearby weather-radar station.
+# Check that no record drops out due to missing predictor.
 ua_file <- "data/derived/useavail_points.csv"
 if (file.exists(ua_file)) {
   ua <- fread(ua_file)
@@ -583,7 +587,7 @@ if (file.exists(ua_file)) {
   n_used_full <- nrow(na_analysis); n_used_radar <- NA_integer_
 }
 
-# The step-by-step breakdown, saved so the manuscript's counts stay traceable.
+# The step-by-step breakdown, saved so the manuscript's counts are trackable.
 count_breakdown <- tibble::tribble(
   ~record_set,                      ~n,                                    ~how_it_is_defined,
   "All retained records",           nrow(records),                        "CJ.manual.check == 'y', all continents / years",
