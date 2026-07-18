@@ -1,8 +1,6 @@
 # Load --------------
 library(tidyverse)
-library(tidyterra)
 library(sf)
-library(terra)
 library(rnaturalearth)
 library(lubridate)
 library(patchwork)
@@ -57,7 +55,6 @@ write.csv(df_tidy_licenses, "data/derived/iNaturalist records.csv", row.names = 
 
 
 ## Correct  spatial data -----
-df |> dplyr::filter(is.na(continent))
 # A handful don't overlap countries (probably due to obscured coordinates near the coast).
 # To resolve this, find the nearest country and replace NA's.
 for(i in which(is.na(df$continent)) ) {
@@ -125,11 +122,9 @@ noam_box <- st_bbox(c(xmin = -126, ymin = 5, xmax = -68, ymax = 54), crs = st_cr
 # Plot circle in grid.
 iNat_map_grid_circle <- ggplot() +
   geom_sf(world, mapping = aes(), fill = "grey95", color = "grey60", linewidth = 0.1) +
-  # TESTING: translucent tint over the North America landmass (ties to Figure 5's blue),
-  # drawn beneath the record layers so the circles stay crisp on top. To go back to the
-  # dashed box, comment this out and add, as the LAST geom:
-  #   geom_sf(noam_box, mapping = aes(), fill = NA, color = "grey25", linewidth = 0.4,
-  #           linetype = "22")
+  # Translucent tint over the North America landmass (ties to Figure 5's blue), drawn
+  # beneath the record layers so the circles stay crisp on top. `noam_box` (above) is an
+  # alternative dashed-rectangle highlight: swap it in as the last geom to use it instead.
   geom_sf(noam_shade, mapping = aes(), fill = "#0072B2", alpha = 0.18, color = NA) +
   geom_sf(df_grid_count_grid, mapping = aes(), color = "grey50", fill = NA) +
   geom_sf(df_grid_count, mapping = aes(size = n), alpha = 0.5, color = "#00B31B") +
@@ -369,7 +364,7 @@ iNaturalist_NoAm_timing_list <- lapply(c(
       theme(
         axis.text.x = ggtext::element_markdown(angle = 55, hjust = 1),
         strip.text = ggtext::element_markdown(),
-        panel.grid.major.y = element_line(color = "grey80"), linewidth = 0.3,
+        panel.grid.major.y = element_line(color = "grey80", linewidth = 0.3),
         panel.grid.minor.y = element_line(color = "grey90", linewidth = 0.15),
         legend.position = "none",
         strip.background = element_blank()

@@ -2,6 +2,11 @@
 library(tidyverse)
 theme_set(theme_classic())
 
+# Scratch output directories used across scripts (gitignored, so absent on a fresh
+# clone). Created here because every analysis script sources this file.
+for (.d in c("tmp", "figs")) if (!dir.exists(.d)) dir.create(.d)
+rm(.d)
+
 # Date-related functions and objects-------------------------------------------------
 
 yDay_to_dayMonth <- function(yday) {
@@ -47,13 +52,11 @@ doy_labels <- format(mdy(monthFirsts), "%b")
 
 
 
-# Notes from CJ:
-# These functions are directly adapted from rinat, but several contain original features.
-# Those features were developed for an iNat user project (Grady et al., in review),
-# New features I added in the course of this study:
-# - Search arguments in searchBuilder for project, field, and observation ID.
-# I would recommend citing this ms, rinat, and Grady et al. to thoroughly
-# reference the source of these functions if they were used further.
+# Provenance: these iNaturalist download helpers are adapted from the rinat
+# package. Several features (searchBuilder arguments for project, field, and
+# observation ID searches) were originally developed for a separate iNaturalist
+# user project and extended here. If these functions are reused, please cite
+# rinat alongside this study.
 
 
 # Zero-row template used to initialize the output in downloadResults(); ensures
@@ -74,18 +77,6 @@ emptyDF <- structure(list(scientific_name = character(0), datetime = character(0
                           updated_at = character(0), quality_grade = character(0), 
                           license = character(0), sound_url = logical(0), oauth_application_id = integer(0), 
                           captive_cultivated = character(0)), row.names = integer(0), class = "data.frame")
-
-# checkCons <- function() {
-#   if (!curl::has_internet()) {
-#     message("No Internet connection.")
-#     return(invisible(NULL))
-#   }
-#   base_url <- "http://www.inaturalist.org/"
-#   if (httr::http_error(base_url)) {
-#     message("iNaturalist API is unavailable.")
-#     return(invisible(NULL))
-#   }
-# }
 
 searchBuilder <- function(query = NULL, taxon_name = NULL, taxon_id = NULL, place_id = NULL, 
                           quality = NULL, geo = NULL, annotation = NULL, 
@@ -247,9 +238,6 @@ searchBuilder <- function(query = NULL, taxon_name = NULL, taxon_id = NULL, plac
     search <- paste0(search, user_id2)
   }
 
-  q_path <- "observations.csv"
-  ping_path <- "observations.json"
-  
   return(list(base_url = base_url, search = search))
   
 }
@@ -301,7 +289,7 @@ checkResults <- function(search_out) {
   else if (total_res >= 2e+05) {
     stop("Your search returned too many results, please consider breaking it up into smaller chunks by year or month.")
   }
-  else if (!is.null(bounds) && total_res >= 1e+05) {
+  else if (total_res >= 1e+05) {
     stop("Your search returned too many results, please consider breaking it up into smaller chunks by year or month.")
   }
   

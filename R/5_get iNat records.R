@@ -1,6 +1,7 @@
 library(data.table)
 library(rinat)
 library(readxl)
+source("R/0_funs.R")   # tidyverse + iNaturalist download helpers (searchBuilder, downloadResults, howManyResults)
 # Chiroptera tax ID: 40268
 
 all <- read_excel("data/tidy 6-2-2025 iNat bat collision Records sorted.xlsx") |> 
@@ -18,7 +19,7 @@ for(i in 1:nrow(all)) {
   
   cat(paste0("\rWorking on ", i))
   if(file.exists(iNatObsFile)) {iNatObs_downloaded <- fread(iNatObsFile)}
-  if(exists("iNatObsFile")) { if(all$id[i] %in% iNatObs_downloaded$id) {next} }
+  if(exists("iNatObs_downloaded")) { if(all$id[i] %in% iNatObs_downloaded$id) {next} }
   if(is.na(all$id[i])) next
   
   df <- rinat::get_inat_obs_id(all$id[i])
@@ -104,7 +105,7 @@ for(i in 1:nrow(all)) {
   if(file.exists("data/iNat downloads/observations_from_our_searches.csv") & !exists("obs_downloaded_already")) {
     obs_downloaded_already <- fread("data/iNat downloads/observations_from_our_searches.csv")
   }
-  if(all$id[i] %in% obs_downloaded_already$id) next
+  if(exists("obs_downloaded_already") && all$id[i] %in% obs_downloaded_already$id) next
   cat(paste("\r Downloads complete for", round(i/nrow(all)*100), "%"))
   mysearch1 <- searchBuilder(taxon_id = 40268, id = all$id[i])
  #  howManyResults(mysearch1)
@@ -296,9 +297,7 @@ df <- df0 |>
   ) |> 
   dplyr::filter(
     !is.na(id),
-    # Remove a user's observations:
-   #  user_login != "redtail5"
-    ) |> 
+    ) |>
   arrange(id)
 
 fwrite(df, "data/iNat_observations_tidy.csv", row.names = F)

@@ -1,12 +1,7 @@
 
 # Setup ==============
 source("R/0_funs.R")
-library(sf)
-library(geodata)
-library(rinat)
-library(tidyterra)
 library(data.table)
-library(magick)
 
 speciesColors <- c(
   "Big brown" = "#A8541F",
@@ -125,7 +120,7 @@ df_discovery2 |>
     axis.title.y = element_blank(),
     axis.text.y = ggtext::element_markdown(),
   ))
-ggsave("figs/KC_records_by_species_with incidental.png", p_KC_records_by_species_incidental, dpi = 600)
+ggsave("figs/KC_records_by_species_with_incidental.png", p_KC_records_by_species_incidental, dpi = 600)
 saveRDS(p_KC_records_by_species_incidental, "tmp/p_KC_records_by_species_with incidental.rds")
 
 

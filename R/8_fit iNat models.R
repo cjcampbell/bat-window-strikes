@@ -27,11 +27,12 @@ library(data.table)
 library(brms)
 library(splines)
 library(patchwork)
-library(ggtext)
 library(lme4)
 
 # Fit a use-availability Bernoulli model with the shared brms settings and attach
-# LOO. Cached by `file` under out/models/ (delete to refit).
+# LOO. The fit AND its LOO are cached by `file` under out/models/ (delete to refit);
+# forwarding `file` to add_criterion() persists LOO in the .rds so it is not
+# recomputed on every re-source.
 brm_ua <- function(formula, data, file) {
   m <- brm(
     bf(formula), data = data, family = bernoulli(),
@@ -39,7 +40,7 @@ brm_ua <- function(formula, data, file) {
     threads = threading(4), backend = "cmdstanr",
     file = file.path("out/models", file)
   )
-  add_criterion(m, "loo")
+  add_criterion(m, "loo", file = file.path("out/models", file))
 }
 
 # Build the design columns for a "hurdle" (two-part) version of a driver, used only as a
@@ -284,6 +285,9 @@ mapKeys <- c("Bat collision"           = col_coll,
              "Background (available)"  = col_bg,
              "100-km available region" = col_reg)
 lim_hi   <- log1p(50)   # ~p99.9 of radiance -> palette top; cores saturate
+# Figure 5 basemap (log-radiance glow), written by 7_prep iNat models.R. Not
+# distributed with the repo (data/ALAN/ is untracked); re-run script 7 to regenerate.
+stopifnot("data/ALAN/alan_glow_log_ll.tif not found; produced by script 7" = file.exists("data/ALAN/alan_glow_log_ll.tif"))
 glow_ll  <- rast("data/ALAN/alan_glow_log_ll.tif"); names(glow_ll) <- "radiance"
 glow_pr  <- project(glow_ll, proj_na, method = "bilinear")
 

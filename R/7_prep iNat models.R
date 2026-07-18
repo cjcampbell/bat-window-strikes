@@ -206,11 +206,13 @@ background_region <- st_sf(geometry = background_region)
 # directly and never touches the global file. Delete the local crop to force a
 # re-crop.
 alan_crop   <- "data/ALAN/VNL_npp_2024_vcmslcfg_v2_NAcrop.tif"
-alan_global <- paste0("/Users/ccampbell/Library/CloudStorage/Box-Box/",
-                      "- Missions & Programs/Research & Development/Data Products/ALAN/",
-                      "VIIRS VNL v2 annual composites/",
-                      "VNL_npp_2024_global_vcmslcfg_v2_c202502261200.median_masked.dat.tif")
+# Global VIIRS VNL v2 2024 annual composite (~11 GB, median-masked; Elvidge et al.
+# 2021). Not distributed with this repo; download from
+# https://eogdata.mines.edu/nighttime_light/annual/v2_1/2024/ and set this to the
+# local file. Only read on the first run, to build the small local crop below.
+alan_global <- "<path to VNL_npp_2024_global_vcmslcfg_v2_..._median_masked.dat.tif>"
 if (!file.exists(alan_crop)) {
+  stopifnot("Global ALAN composite not found; set alan_global (see comment above)" = file.exists(alan_global))
   if (!dir.exists("data/ALAN")) dir.create("data/ALAN", recursive = TRUE)
   bb       <- st_bbox(background_region)
   crop_ext <- ext(bb[["xmin"]] - 0.5, bb[["xmax"]] + 0.5, bb[["ymin"]] - 0.5, bb[["ymax"]] + 0.5)

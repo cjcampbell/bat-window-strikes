@@ -25,8 +25,6 @@ if(!file.exists("tmp/downloads.redtail5.csv")) {
   fwrite(downloads.redtail5, file="tmp/downloads.redtail5.csv", row.names = F)
 }
 
-# 39.110600348029564&nelng=-94.49173146991824&page=2&swlat=39.07396161025084&swlng=-94.65489560871218
-
 # Retain only those points observed on surveyed dates.
 sd <- read.csv("data/derived/structured_surveys_schedule.csv") |> 
   dplyr::filter(survey == TRUE) |> 
@@ -241,13 +239,20 @@ ggsave(p_big, filename = "figs/map_country.svg", width = 1.69*2,  height = 1.11*
 #       nlcd_2021_land_cover_l48_20230630.img   # NLCD 2021 land cover raster
 #     gadm/                                     # created automatically by geodata::gadm()
 
+# Set this to a local directory with the structure documented above. The NLCD
+# raster and GADM boundaries are large and are not distributed with this repo;
+# NLCD 2021 land cover is available from https://www.mrlc.gov/data.
+largeFileStoragePath <- "<path to large-file storage>"
+
 # Load land cover dataset from NLCD.
-nlcd0 <- rast(file.path(largeFileStoragePath, "nlcd/nlcd_2021_land_cover_l48_20230630/nlcd_2021_land_cover_l48_20230630.img"))
+nlcd_path <- file.path(largeFileStoragePath, "nlcd/nlcd_2021_land_cover_l48_20230630/nlcd_2021_land_cover_l48_20230630.img")
+stopifnot("NLCD raster not found under largeFileStoragePath (see comment above)" = file.exists(nlcd_path))
+nlcd0 <- rast(nlcd_path)
 nlcd_crop_medium <- crop(nlcd0, project(terra::vect(myBox_medium),crs(nlcd0)))
 myBox_medium_acea <- st_transform(myBox_medium, st_crs(nlcd_crop_medium))
 
 geodata::geodata_path(largeFileStoragePath)
-usa_48 <- geodata::gadm(country = "USA", path = "../../- Missions & Programs/Research & Development/Data Products/") |> 
+usa_48 <- geodata::gadm(country = "USA", path = largeFileStoragePath) |>
   st_as_sf() |> 
   dplyr::filter(!NAME_1 %in% c("Alaska", "Hawaii", "Puerto Rico")) |> 
   vect()

@@ -101,7 +101,7 @@ df_discovery2 <- df_discovery |>
 write.csv(df_discovery2, "data/derived/structured_surveys_bats_discovered.csv", row.names = F)
 
 
-# Load survey data data ---------------------------------------------------
+# Load survey data ---------------------------------------------------
 
 sd1 <- read_excel("data/Survey dates corrected.xlsx", sheet = "Sheet1_tidy") |> 
   dplyr::rename(year = 1) |> 
@@ -113,11 +113,8 @@ sd1 <- read_excel("data/Survey dates corrected.xlsx", sheet = "Sheet1_tidy") |>
     ) |> 
   dplyr::select(-calDate, -year)
 
-# There were some dates missing from the survey dates spreadsheet. Infer them 
-# using observation data.
-# sd <- rbind(sd, data.frame(survey = TRUE, date = (unique(df_discovery2$date))[!(unique(df_discovery2$date) %in% sd$date)])) |>
-#   arrange(date)
-
+# Dates absent from the survey spreadsheet are non-survey days: join a full daily
+# calendar over the study period and mark unmatched dates as survey = FALSE.
 fullDates <- data.frame(date = seq.Date(ymd("2019-09-01"), ymd("2024-12-31"), by = "1 days" ))
 sd <- full_join(sd1, fullDates) |> 
   arrange(date) |> 
@@ -128,11 +125,3 @@ sd <- full_join(sd1, fullDates) |>
     ) 
 
 write.csv(sd, "data/derived/structured_surveys_schedule.csv", row.names = F)
-
-sd_yday_count <- sd |> 
-  group_by(yday_bin7) |> 
-  dplyr::summarise(n_surveys = sum(survey)) |> 
-  dplyr::mutate(
-    yday_bin7_lab = as.character(yday_bin7),
-    yday = as.numeric(gsub("\\(", "", stringr::word(yday_bin7_lab, 1,1, sep = ","))),
-  )
