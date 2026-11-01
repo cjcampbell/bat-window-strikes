@@ -35,12 +35,12 @@ skipped if starting from the shared derived files.
 | Script | Description |
 | ------ | ----------- |
 | `0_funs.R` | Setup and functions used in subsequent scripts. |
-| `1_setup and load KC data.R` | Load and tidy data from semi-structured surveys in Kansas City, MO ("KC"). The primary outputs are `data/derived/structured_surveys_schedule.csv` and `data/derived/structured_surveys_bats_discovered.csv`. |
+| `1_setup and load KC data.R` | Load and tidy data from semi-structured surveys in Kansas City, MO ("KC"). The primary outputs are `data/derived/structured_surveys_schedule.csv` and `data/derived/structured_surveys_bats_discovered.csv`; also writes Supporting Information Tables S1–S2 to `out/tables/`. |
 | `2_plot and summarize KC records.R` | Plots and summaries from KC semi-structured surveys. |
 | `3_model KC record timing.R` | Models predicting bat discoveries by day of year from KC surveys. |
 | `4_map KC records.R` | Maps of KC survey records. Requires local NLCD data for the regional land cover map; see comments in script for directory structure. |
-| `5_get iNat records.R` | Download candidate records from iNaturalist. After manual cleaning and removal of unlicensed data, the shareable output is `data/derived/iNaturalist records.csv`. |
-| `6_describe iNat records.R` | Descriptive analysis and figures from the curated iNaturalist records (global distribution maps, seasonal/diel timing). Requires `data/iNat_observations_tidy_manualChecks.csv` (not publicly archived due to licensing constraints). |
+| `5_get iNat records.R` | Download candidate records and taxonomic information from iNaturalist. Outputs (not archived) feed the manual checks that produce `data/iNat_observations_tidy_manualChecks.csv`, the input to scripts 6 and 7. |
+| `6_describe iNat records.R` | Descriptive analysis and figures from the curated iNaturalist records (global distribution maps, seasonal/diel timing). Writes the shareable `data/derived/iNaturalist records.csv` (restrictive-license fields withheld), its copy as Table S3 in `out/tables/`, and `data/derived/record_count_breakdown.csv` (the radar-matched count requires `useavail_points.csv` from script 7). Requires `data/iNat_observations_tidy_manualChecks.csv` (not publicly archived due to licensing constraints). |
 | `7_prep iNat models.R` | Assemble the use-vs-available modeling table: download an effort-weighted iNaturalist background sample, extract environmental covariates (building height, nighttime radiance/ALAN), and match nightly bird-migration traffic (NEXRAD radar) to each point. Writes `data/derived/inat_background.csv`, `inat_background_effort.csv`, and `useavail_points.csv`. Requires API access and local raster/radar data. |
 | `8_fit iNat models.R` | Fit and summarize the use-vs-available (collision-driver) models from `data/derived/useavail_points.csv` and produce the driver figures. Fitted models are cached in `out/models/` (`.rds`). |
 
@@ -63,9 +63,10 @@ and 8 can be run in full starting from the files in this directory.**
 
 ## tmp/
 
-Intermediate plot objects cached between scripts (gitignored; created on first
-run). Scripts 2 and 3 use this directory to pass assembled ggplot objects between
-steps when building multi-panel figures.
+Intermediate objects cached between and within scripts (gitignored; created on
+first run). Scripts 2 and 3 use this directory to pass assembled ggplot objects
+between steps when building multi-panel figures; scripts 4, 7, and 8 cache
+downloads (iNaturalist, OpenStreetMap, Natural Earth) and resumable API pulls here.
 
 
 ## out/
@@ -74,13 +75,26 @@ Core outputs of analyses.
 
 | Directory | Description |
 | --------- | ----------- |
-| `figs/` | Figures used in manuscript and SI. |
+| `figs/` | Figures used in manuscript and SI. Scripts write panels to a gitignored scratch `figs/` directory at the repo root; final figures are assembled from those panels and saved here by hand (`f2_photos.png` is not script-generated). |
+| `tables/` | Supporting Information tables (`.csv`), described below. |
 | `models/` | Fitted model objects (`.rds`, cached by brms) from `3_model KC record timing.R` (Kansas City timing) and `8_fit iNat models.R` (use-vs-available collision-driver models). |
 
 The model fits are cached via brms's `file =` argument and are committed to the
 repo. Re-running scripts 3 and 8 **loads these cached, seeded fits rather than
 refitting** (LOO is cached alongside each fit); delete a model's `.rds` to force a
 genuine refit from the seed.
+
+### out/tables/
+
+Supporting Information tables. Tables S1–S2 are written by `1_setup and load KC
+data.R` (which needs the raw KC spreadsheet) and Table S3 by `6_describe iNat
+records.R`. The model inputs remain the files in `data/derived/`.
+
+| File | Description |
+| ---- | ----------- |
+| `table_s1_structured_surveys_schedule.csv` | Table S1. Dates of semi-structured surveys in KC (survey days only; a subset of `data/derived/structured_surveys_schedule.csv`). Contains columns: <br> `date` = Date of survey in yyyy-mm-dd format.<br> `yday` = Day of year of survey (1-365). |
+| `table_s2_structured_surveys_bats_discovered.csv` | Table S2. All bats discovered in KC, including those found or reported outside surveys. Same columns as `data/derived/structured_surveys_bats_discovered.csv`, plus: <br> `on_survey` = Was the bat found on a survey day? (boolean; `TRUE` records are the set used in analyses). |
+| `table_s3_iNaturalist_records.csv` | Table S3. Retained iNaturalist records; identical to `data/derived/iNaturalist records.csv` (see that entry for columns and license handling). |
 
 
 ## Session info
