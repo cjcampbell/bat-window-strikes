@@ -115,8 +115,8 @@ backgroundColor <- "grey45"
 # silently drops a class from the legend (the "factor bug"). `used == 1` is the collision
 # class (first entry); `used == 0` the background class (second).
 sampleColors <- c(
-  "collision site"         = collisionColor,
-  "background (available)" = backgroundColor
+  "Bat collision"          = collisionColor,
+  "Background (available)" = backgroundColor
 )
 # Map a 0/1 `used` vector to the labelled factor. collisions_first sets legend/stack order.
 sampleFactor <- function(used, collisions_first = TRUE) {
@@ -275,7 +275,7 @@ na_lakes <- readRDS("tmp/ne_lakes.rds")
 proj_na <- "+proj=laea +lat_0=45 +lon_0=-100 +datum=WGS84 +units=m +no_defs"
 
 # Draw on the ALAN surface.
-base_dk  <- "#03010a"
+base_dk  <- "#000004"   # magma's floor, so zero-radiance cells meet the background seamlessly
 col_bg   <- "#E8EEF7"   # background (available) points, insets only
 col_coll <- "#5AB0FF"   # collisions: luminous blue, reads against the glow
 col_reg  <- "#38D6B0"   # 100-km available region outline
@@ -293,12 +293,12 @@ glow_pr  <- project(glow_ll, proj_na, method = "bilinear")
 
 fillGlow <- function(guide = "none") scale_fill_viridis_c(
   option = "magma", limits = c(0, lim_hi), oob = scales::squish, na.value = base_dk,
-  name = "Nighttime\nradiance", breaks = log1p(c(0, 1, 10, 50)),
-  labels = c("0", "1", "10", "50+"), guide = guide)
+  name = "Nighttime radiance<br>(nW cm<sup>−2</sup> sr<sup>−1</sup>)", breaks = log1p(c(0, 2, 10, 50)),
+  labels = c("0", "2", "10", "50+"), guide = guide)   # 2 not 1: on log1p, 0 and 1 crowd
 themeDark <- function() theme_void(base_size = 8) + theme(
   plot.background  = element_rect(fill = base_dk, colour = NA),
   panel.background = element_rect(fill = base_dk, colour = NA),
-  legend.title = element_text(colour = "grey85", size = 7),
+  legend.title = ggtext::element_markdown(colour = "grey85", size = 7, lineheight = 1.15),  # two-line title with superscript units
   legend.text  = element_text(colour = "grey75", size = 7),  # match lower-panel axis text (f5_axis)
   plot.margin  = margin(1, 1, 1, 1))
 
@@ -308,10 +308,12 @@ themeDark <- function() theme_void(base_size = 8) + theme(
 buffers <- st_buffer(collisions_sf, 100000)
 # View = extent of all buffers plus a margin, so every circle sits fully in frame. The
 # western margin is dropped: the Pacific-coast circles already reach into open ocean,
-# where no background exists, so extra room there is dead space.
+# where no background exists, so extra room there is dead space. The southern margin is
+# trimmed to a sliver below the Costa Rica circle, the southernmost.
 be   <- st_bbox(st_transform(background_region, proj_na))
 mrg  <- 75000
 mrg_w <- 0
+mrg_s <- 15000
 
 # Inset windows: a dense cluster (mid-Atlantic) and an isolated collision (Denver),
 # zoomed far enough that individual background points read. Denver shows the effort
@@ -345,11 +347,14 @@ boxPoly <- function(w) st_as_sf(st_sfc(st_polygon(list(rbind(
                                    barwidth = unit(5, "pt"),
                                    ticks.colour = NA, frame.colour = NA)) +
   coord_sf(crs = proj_na, xlim = c(be[["xmin"]] - mrg_w, be[["xmax"]] + mrg),
-           ylim = c(be[["ymin"]] - mrg, be[["ymax"]] + mrg), expand = FALSE) +
+           ylim = c(be[["ymin"]] - mrg_s, be[["ymax"]] + mrg), expand = FALSE) +
   themeDark() +
-  theme(legend.position = "inside", legend.position.inside = c(0.015, 0.30),
-        legend.justification = c(0, 0.5), legend.box.just = "left",
-        legend.key = element_blank(), legend.spacing.y = unit(3, "pt")))
+  # Legend top sits just below the tip of Baja California, with compact keys so the
+  # whole block stays over open Pacific.
+  theme(legend.position = "inside", legend.position.inside = c(0.015, 0.31),
+        legend.justification = c(0, 1), legend.box.just = "left",
+        legend.key = element_blank(), legend.spacing.y = unit(3, "pt"),
+        legend.key.height = unit(9, "pt"), legend.key.spacing.y = unit(1, "pt")))
 
 # Inset panels: buffers merge into the union outline (as on the main map), with the
 # collisions and the background points that were drawn inside them.
@@ -394,43 +399,64 @@ ceData <- list(
            lower__ = apply(traffic_epred, 2, quantile, 0.025),
            upper__ = apply(traffic_epred, 2, quantile, 0.975))
 )
-ceLabs <- c(building_height = "Building height (m)", alan = "Nighttime radiance (ALAN)",
-            yday = "Day of year", traffic = "Nightly migration traffic")
+# The plain titles carry an invisible superscript so all four share the same text height;
+# otherwise the superscripted titles sit lower than their row-mates.
+ceLabs <- list(building_height = expression("Building height (m)"*phantom(""^2)),
+               alan = expression("Nighttime radiance (nW cm"^-2*" sr"^-1*")"),
+               yday = expression("Day of year"*phantom(""^2)),
+               traffic = expression("Nightly migration traffic (cm"^2*" km"^-1*")"))
 
 # `dat` (optional) overlays the records as rugs: collisions along the top (accent),
 # background along the bottom (subtle) -- the binary-response analogue of data
 # points. `y_accuracy` (optional) fixes the y-tick decimal places so several panels
 # get identical axis-text width, keeping their panel regions equal when arranged.
-cePanel <- function(v, logx = FALSE, log1px = FALSE, dat = NULL, y_accuracy = NULL) {
+# `y_breaks` (optional) sets the y ticks; breaks y_accuracy can't show exactly fall back
+# to scientific notation.
+# `y_top` is the y-axis headroom above the band (ggplot's default is 0.05), so the
+# collision rug clears tall bands.
+cePanel <- function(v, logx = FALSE, dat = NULL, y_accuracy = NULL,
+                    y_breaks = waiver(), y_top = 0.05) {
   dd <- ceData[[v]]
   dd$x <- dd[[v]]
   g <- ggplot(dd, aes(x, estimate__)) +
     geom_ribbon(aes(ymin = lower__, ymax = upper__),
                 fill = scales::muted(collisionColor, l = 95, c = 20)) +
     geom_line(colour = collisionColor) +
-    scale_y_continuous("Relative probability of collision",
-                       labels = if (is.null(y_accuracy)) waiver() else
-                         scales::label_number(accuracy = y_accuracy)) +
-    xlab(ceLabs[v])
+    scale_y_continuous("Relative probability of collision", breaks = y_breaks,
+                       expand = expansion(mult = c(0.05, y_top)),
+                       labels = if (is.null(y_accuracy)) waiver() else function(b) {
+                         # Fixed decimals only if they show every break exactly;
+                         # otherwise scientific notation rather than a rounded label.
+                         exact <- all(abs(b - round(b / y_accuracy) * y_accuracy) <
+                                        1e-9 * y_accuracy, na.rm = TRUE)
+                         if (exact) scales::label_number(accuracy = y_accuracy)(b)
+                         else scales::label_scientific()(b)
+                       }) +
+    xlab(ceLabs[[v]])
   if (!is.null(dat)) {
     g <- g +
       geom_rug(data = dat[dat$used == 0, ], aes(x = .data[[v]]), inherit.aes = FALSE,
-               sides = "b", colour = backgroundColor, alpha = 0.12,
+               sides = "b", colour = backgroundColor, alpha = 0.08, linewidth = 0.2,
                length = unit(0.05, "npc")) +
       geom_rug(data = dat[dat$used == 1, ], aes(x = .data[[v]]), inherit.aes = FALSE,
-               sides = "t", colour = collisionColor, alpha = 0.5,
+               sides = "t", colour = collisionColor, alpha = 0.4, linewidth = 0.2,
                length = unit(0.05, "npc"))
   }
-  if (logx) g <- g + scale_x_log10()
-  # ALAN is right-skewed with a point mass at 0 (log1p in the model); a pseudo-log
-  # axis spreads the curve out while still showing the zero values.
-  if (log1px) g <- g + scale_x_continuous(trans = scales::pseudo_log_trans(base = 10),
-                                          breaks = c(0, 3, 10, 30, 100, 300))
+  # A labelled tick at every power of ten, with faint minor ticks at 2-9 x 10^n
+  # between them, kept within the curve's range.
+  if (logx) {
+    mb <- as.vector(outer(2:9, 10^(-2:9)))
+    MB <- 10^(-2:9)
+    g <- g + scale_x_log10(breaks = MB[MB >= min(dd$x) & MB <= max(dd$x)],
+                           labels = scales::label_log(),
+                           minor_breaks = mb[mb >= min(dd$x) & mb <= max(dd$x)],
+                           guide = guide_axis(minor.ticks = TRUE))
+  }
   if (v == "yday") {
-    g <- g + scale_x_continuous("Day of year",
+    g <- g + scale_x_continuous(ceLabs[[v]],
                                 breaks = monthDayYear_to_yday(monthFirsts),
                                 labels = format(mdy(monthFirsts), "%b")) +
-      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, margin = margin(t = 0.5)))
   }
   g
 }
@@ -441,13 +467,23 @@ p_map     <- f_map     + labs(tag = "(a)") + theme(plot.tag = element_text(colou
 p_insetA  <- f_insetA  + labs(tag = winA$tag) + theme(plot.tag = element_text(colour = winA$col))
 p_insetB  <- f_insetB  + labs(tag = winB$tag) + theme(plot.tag = element_text(colour = winB$col))
 
-p_bh0      <- cePanel("building_height", dat = radar_data, y_accuracy = 0.001) #+ labs(tag = "(d)")
-p_alan0    <- cePanel("alan", log1px = TRUE, dat = radar_data, y_accuracy = 0.001) #+ labs(tag = "(e)")
-p_yday0    <- cePanel("yday", dat = radar_data, y_accuracy = 0.001)            #+ labs(tag = "(f)")
-p_traffic0 <- cePanel("traffic", logx = TRUE, dat = radar_data, y_accuracy = 1e-4) #+ labs(tag = "(g)")
+p_bh0      <- cePanel("building_height", dat = radar_data, y_accuracy = 0.001,
+                      y_breaks = seq(0, 0.02, 0.01), y_top = 0.10)            + labs(tag = "(d)")
+p_alan0    <- cePanel("alan", dat = radar_data, y_accuracy = 0.001,
+                      y_breaks = seq(0, 0.25, 0.05))                           + labs(tag = "(e)")
+p_yday0    <- cePanel("yday", dat = radar_data, y_accuracy = 0.001,
+                      y_breaks = seq(0, 0.003, 0.001), y_top = 0.15)          + labs(tag = "(f)")
+p_traffic0 <- cePanel("traffic", logx = TRUE, dat = radar_data, y_accuracy = 1e-4,
+                      y_breaks = seq(0, 8e-4, 4e-4), y_top = 0.15)            + labs(tag = "(g)")
 
 f5_tag  <- theme(plot.tag = element_text(size = 9))
-f5_axis <- theme(axis.text.x = element_text(size = 7))
+# Type scale: 7-pt tick labels (matching the map legend), 8-pt axis titles, 9-pt tags.
+f5_axis <- theme(axis.text  = element_text(size = 7, colour = "grey20"),
+                 axis.title = element_text(size = 8),
+                 axis.title.x = element_text(margin = margin(t = 0.5)),   # snug to tick labels
+                 axis.minor.ticks.x.bottom = element_line(linewidth = 0.25, colour = "grey60"),
+                 axis.ticks.length = unit(2.75, "pt"),
+                 axis.minor.ticks.length = unit(1.375, "pt"))   # half the major ticks
 p_map     <- p_map     + f5_tag
 p_insetA  <- p_insetA  + f5_tag
 p_insetB  <- p_insetB  + f5_tag
@@ -461,23 +497,35 @@ p_traffic <- p_traffic0 + f5_tag + f5_axis
 # Inkscape; the ~0.23 in remainder falls to the inter-panel gap and outer margins.
 f5_top    <- p_map + (p_insetA / p_insetB) +
   plot_layout(widths = c(4.107/2.16, 1))
-# Bottom 2x2 shares one y-axis label: drop the four repeated per-panel y-titles and
-# add a single centred, rotated label to their left (11 pt, matching the panel axis
-# titles under theme_classic). Widths c(1, 26) give the strip ~0.24 in at 6.5 in wide.
-# plot.margin (default 5.5 pt) sets the gap between patchwork panels; trim it to pull
-# the 2x2 effect plots closer together.
-f5_effects <- p_bh + p_alan + p_yday + p_traffic + plot_layout(nrow = 2) &
-  theme(axis.title.y = element_blank(), plot.margin = margin(2, 2, 2, 2))
-f5_ylab <- wrap_elements(full = grid::textGrob(
-  "Relative probability of collision", rot = 90, gp = grid::gpar(fontsize = 11)))
-f5_bottom <- f5_ylab + f5_effects + plot_layout(widths = c(1, 26))
-ggsave("figs/f5_bottom.png", f5_bottom, width = 6.5, height = (8.06-4.226), bg = "white", dpi = 100)
-ggsave("figs/f5_bottom.svg", f5_bottom, width = 6.5, height = (8.06-4.226), bg = "white")
+# Bottom 2x2 shares one y-axis label: axis_titles = "collect" merges the four identical
+# y-titles into one, set right against the tick labels. Tags are anchored just above and
+# left of each panel's top-left corner (location "panel") so they take no margin column
+# of their own and clear the axis line; the 12-pt top margin makes room for them.
+# plot.margin (default 5.5 pt) sets the gap between patchwork panels; trim the rest to
+# pull the 2x2 effect plots together.
+f5_bottom <- p_bh + p_alan + p_yday + p_traffic +
+  plot_layout(nrow = 2, axis_titles = "collect") &
+  theme(plot.margin = margin(12, 2, 2, 2),
+        plot.tag.location = "panel", plot.tag.position = c(-0.012, 1.035),
+        plot.tag = element_text(hjust = 1, vjust = 0))
+ggsave("figs/f5_bottom.png", f5_bottom, width = 6.5, height = 2.9, bg = "white", dpi = 100)
+ggsave("figs/f5_bottom.svg", f5_bottom, width = 6.5, height = 2.9, bg = "white")
 
-# Stack the two halves into a single SVG. Heights track each half's native aspect.
-f5_combined <- f5_top / f5_bottom + plot_layout(heights = c(1, 0.9))
-ggsave("figs/f5_iNaturalist results.png", f5_combined, width = 6.5, height = 9, dpi = 200, bg = "white")
-ggsave("figs/f5_iNaturalist results.svg", f5_combined, width = 6.5, height = 9, bg = "white")
+# Stack the two halves into a single SVG. The top half keeps ~4.65 in (the map's native
+# aspect at 6.5 in wide); the effect plots get 0.624 of that, so they read wider than tall.
+# wrap_elements() keeps the map from being aligned to the bottom panels' axes. The top
+# half gets the dark basemap fill edge to edge, so the slack left around the
+# fixed-aspect insets reads as part of the dark block rather than as white bands.
+bg_dk       <- theme(plot.background = element_rect(fill = base_dk, colour = NA))
+f5_top_dk   <- wrap_elements(full = f5_top + plot_annotation(theme = bg_dk)) +
+  bg_dk + theme(plot.margin = margin(0, 0, 0, 0))
+f5_combined <- f5_top_dk /
+  (wrap_elements(full = f5_bottom + plot_annotation(theme = theme(plot.margin = margin(0, 5.5, 5.5, 5.5)))) +
+     theme(plot.margin = margin(0, 0, 0, 0))) +   # no gap under the map block
+  plot_layout(heights = c(1, 0.624)) +
+  plot_annotation(theme = theme(plot.margin = margin(0, 0, 0, 0)))   # dark block runs to the figure edge
+ggsave("figs/f5_iNaturalist results.png", f5_combined, width = 6.5, height = 7.55, dpi = 600, bg = "white")
+ggsave("figs/f5_iNaturalist results.svg", f5_combined, width = 6.5, height = 7.55, bg = "white")
 
 
 
@@ -490,15 +538,16 @@ contrastPanel <- function(x, xlab, logx = FALSE) {
     scale_colour_manual(NULL, values = sampleColors) +
     scale_y_continuous("Density") +
     xlab(xlab)
-  if (logx) g <- g + scale_x_log10()
+  if (logx) g <- g + scale_x_log10(labels = scales::label_log())
   g
 }
 f_contrasts <- contrastPanel("building_height", "Building height (m)") +
-    contrastPanel("alan", "Nighttime radiance (ALAN)") +
+    contrastPanel("alan", expression("Nighttime radiance (nW cm"^-2*" sr"^-1*")")) +
     contrastPanel("yday", "Day of year") +
-    contrastPanel("traffic", "Nightly migration traffic (night prior)", logx = TRUE) +
-    plot_layout(nrow = 2, guides = "collect") &
-    theme(legend.position = "bottom")
+    contrastPanel("traffic", expression("Nightly migration traffic, night prior (cm"^2*" km"^-1*")"), logx = TRUE) +
+    plot_layout(nrow = 2, guides = "collect") +
+    plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
+    theme(legend.position = "bottom", plot.tag = element_text(size = 10))
 ggsave("figs/B_contrasts.png", f_contrasts, width = 8, height = 6, dpi = 600)
 
 ## SI: background reproduces observer effort; collisions do not ----
@@ -518,7 +567,10 @@ f_effort <- ggplot(month_shares, aes(m, share, colour = src)) +
     scale_y_continuous("Share of records") +
     scale_colour_manual(NULL, values = c("effort (reference)" = "grey60",
                                          "background" = "#159367",
-                                         "collisions" = collisionColor))
+                                         "collisions" = collisionColor),
+                        labels = c("effort (reference)" = "Effort (reference)",
+                                   "background" = "Background",
+                                   "collisions" = "Collisions"))
 ggsave("figs/SI_effort_validation.png", f_effort, width = 7, height = 4, dpi = 600, bg = "white")
 
 ## SI: effect sizes and model comparison ----
@@ -538,8 +590,8 @@ iqOR <- function(model, var, data, lo = 0.10, hi = 0.90) {
 }
 effs <- do.call(rbind, lapply(c("building_height", "alan", "traffic"),
                               function(v) iqOR(m_useavail_radar_all, v, radar_data)))
-effs$term <- factor(c("Building height", "ALAN (radiance)", "Night traffic"),
-                    levels = rev(c("Building height", "ALAN (radiance)", "Night traffic")))
+effs$term <- factor(c("Building height", "Nighttime radiance", "Nightly migration traffic"),
+                    levels = rev(c("Building height", "Nighttime radiance", "Nightly migration traffic")))
 p_coef <- ggplot(effs, aes(exp(Estimate), term)) +
   geom_vline(xintercept = 1, linetype = 2, linewidth = 0.2) +
   geom_pointrange(aes(xmin = exp(Q2.5), xmax = exp(Q97.5))) +
@@ -547,15 +599,15 @@ p_coef <- ggplot(effs, aes(exp(Estimate), term)) +
   ylab(NULL)
 loo_tab <- as.data.frame(loo_compare(m_useavail_season_sub, m_useavail_radaronly,
                                      m_useavail_radar_both, m_useavail_radar_alan, m_useavail_radar_all))
-loo_labs <- c(m_useavail_radar_all  = "height + light + season + traffic",
-              m_useavail_radar_alan = "light + season + traffic",
-              m_useavail_radar_both = "height + season + traffic",
-              m_useavail_radaronly  = "height + traffic",
-              m_useavail_season_sub = "height + season")
+loo_labs <- c(m_useavail_radar_all  = "Building height + radiance + day of year + traffic",
+              m_useavail_radar_alan = "Radiance + day of year + traffic",
+              m_useavail_radar_both = "Building height + day of year + traffic",
+              m_useavail_radaronly  = "Building height + traffic",
+              m_useavail_season_sub = "Building height + day of year")
 loo_tab$model <- factor(loo_labs[rownames(loo_tab)], levels = rev(loo_labs[rownames(loo_tab)]))
 p_loo <- ggplot(loo_tab, aes(elpd_diff, model)) +
   geom_pointrange(aes(xmin = elpd_diff - se_diff, xmax = elpd_diff + se_diff)) +
-  scale_x_continuous(expression(Delta * " elpd (vs best model)")) +
+  scale_x_continuous(expression(Delta * "elpd relative to full model")) +
   ylab(NULL)
 f_effectsize_loo <- p_coef + p_loo +
    plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
@@ -649,11 +701,9 @@ p_series <- ggplot(eg, aes(yday, traffic)) +
   geom_point(colour = backgroundColor, alpha = 0.55, size = 1.1) +
   geom_smooth(method = "loess", formula = y ~ x, colour = collisionColor,
               fill = collisionColor, alpha = 0.2, linewidth = 0.9) +
-  annotate("text", x = min(eg$yday), y = max(eg$traffic), vjust = 1, hjust = 0, size = 3,
-           colour = "grey25",
-           label = sprintf("busy:quiet (10th-90th pct) %.0f×\n= median across station-seasons",
-                           eg_band[2] / eg_band[1])) +
-  scale_y_log10("Nightly migration traffic (KMKX, autumn 2020)") +
+  scale_y_log10(expression(atop("Nightly migration traffic (cm"^2*" km"^-1*")",
+                                "KMKX, autumn 2020")),
+                labels = scales::label_log()) +
   scale_x_continuous("Day of year",
                      breaks = monthDayYear_to_yday(monthFirsts),
                      labels = format(mdy(monthFirsts), "%b")) +

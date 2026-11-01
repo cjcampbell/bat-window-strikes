@@ -24,7 +24,7 @@ left as `<placeholder>` values to be set locally; sources are listed below.
 
 **External data sources** (not redistributed here):
 - Nighttime radiance (ALAN): VIIRS VNL v2 annual composite — https://eogdata.mines.edu/nighttime_light/annual/ (Elvidge et al. 2021).
-- Building height: global 150-m GEDI-based product (GBH2020; Scientific Data, 2024).
+- Building height: global 150-m GEDI-based urban building height product (GBH2020; source reference under `data/building height data/`).
 - Land cover: NLCD 2021 — https://www.mrlc.gov/data.
 - Migration traffic: nightly NEXRAD radar (Dark Ecology / `data/darkecology/`).
 - Administrative boundaries: GADM via the `geodata` package.
@@ -76,6 +76,11 @@ Core outputs of analyses.
 | --------- | ----------- |
 | `figs/` | Figures used in manuscript and SI. |
 | `models/` | Fitted model objects (`.rds`, cached by brms) from `3_model KC record timing.R` (Kansas City timing) and `8_fit iNat models.R` (use-vs-available collision-driver models). |
+
+The model fits are cached via brms's `file =` argument and are committed to the
+repo. Re-running scripts 3 and 8 **loads these cached, seeded fits rather than
+refitting** (LOO is cached alongside each fit); delete a model's `.rds` to force a
+genuine refit from the seed.
 
 
 ## Session info

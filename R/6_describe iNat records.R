@@ -31,27 +31,6 @@ df <- read.csv("data/iNat_observations_tidy_manualChecks.csv") |>
   # Unite with spatial data
   st_join(world)
 
-# Create table with observation IDs and license info for retained obs. ------
-# This is intended for sharing without violating license agreements.
-df_with_info <- df  |> 
-  as.data.frame() |> 
-  dplyr::select(
-    id, url, notes = CJ.notes, scientific_name, common_name, description, user_login, observed_on, license, family_name, adm0_a3, continent, 
-  )
-
-df_restrictiveLicenses <- df_with_info |> 
-  dplyr::filter(license == "") |> 
-  dplyr::select(id, url, notes, family_name, adm0_a3, continent) |> 
-  mutate(
-    notes = paste0(notes, ". All rights reserved license"),
-    notes = case_when(notes == ". All rights reserved license" ~ "All rights reserved license", TRUE ~ notes)
-  )
-
-df_otherLicenses <-  df_with_info |> 
-  dplyr::filter(license != "") 
-
-df_tidy_licenses <- full_join(df_otherLicenses, df_restrictiveLicenses)
-write.csv(df_tidy_licenses, "data/derived/iNaturalist records.csv", row.names = F)
 
 
 ## Correct  spatial data -----
@@ -70,6 +49,34 @@ for(i in which(is.na(df$continent)) ) {
   df$adm0_a3[i]   <- workingDF$adm0_a3
   df$continent[i] <- workingDF$continent
 }
+
+# Create table with observation IDs and license info for retained obs. ------
+# This is intended for sharing without violating license agreements (Table S3).
+# Written after the spatial correction above so every record has a country and
+# continent. observed_on is taken from datetime.date because the observed_on
+# column in the manual-checks file was partly converted to Excel serial numbers.
+df_with_info <- df  |> 
+  as.data.frame() |> 
+  dplyr::select(
+    id, url, notes = CJ.notes, scientific_name, common_name, description, user_login,
+    observed_on = datetime.date, license, family_name, adm0_a3, continent
+  )
+
+df_restrictiveLicenses <- df_with_info |> 
+  dplyr::filter(license == "") |> 
+  dplyr::select(id, url, notes, family_name, adm0_a3, continent) |> 
+  mutate(
+    notes = paste0(notes, ". All rights reserved license"),
+    notes = case_when(notes == ". All rights reserved license" ~ "All rights reserved license", TRUE ~ notes)
+  )
+
+df_otherLicenses <-  df_with_info |> 
+  dplyr::filter(license != "") 
+
+df_tidy_licenses <- full_join(df_otherLicenses, df_restrictiveLicenses)
+write.csv(df_tidy_licenses, "data/derived/iNaturalist records.csv", row.names = F)
+dir.create("out/tables", showWarnings = FALSE, recursive = TRUE)
+write.csv(df_tidy_licenses, "out/tables/table_s3_iNaturalist_records.csv", row.names = FALSE)
 
 
 # Map observations -------
@@ -217,10 +224,10 @@ p_all + guide_area() +
     12
     33
     ",
-    heights = c(3,3),
+    heights = c(2.7,1),
     widths = c(10,1),
   ) 
-ggsave("figs/iNaturalist_records_map_by_family.png", dpi = 600, width = 10, height = 8)
+ggsave("figs/iNaturalist_records_map_by_family.png", dpi = 600, width = 10, height = 5.9)
 
 # Timing of observations by continent --------
 
@@ -262,25 +269,37 @@ df_grid |>
 
 
 df_grid |> 
-  count(continent, scientific_name) |> 
-  arrange(desc(n)) |> 
-  mutate(scientific_name=factor(scientific_name, levels = unique(scientific_name))) |>
+  count(continent, scientific_name, genus_name, species_name) |>
+  arrange(desc(n)) |>
+  # Italicize genus and species names only, not higher ranks.
+  mutate(
+    taxon_lab = if_else(
+      scientific_name %in% c(genus_name, species_name),
+      paste0("*", scientific_name, "*"),
+      scientific_name
+    ),
+    taxon_lab = factor(taxon_lab, levels = unique(taxon_lab))
+  ) |>
   ggplot() +
-  geom_col(aes(x = scientific_name, y = n)) +
-  facet_wrap(~continent, axes = "all_x", scales = "free", space = "free_x") +
+  geom_col(aes(x = taxon_lab, y = n)) +
+  facet_wrap(
+    ~continent, axes = "all_x", scales = "free", space = "free_x",
+    labeller = label_wrap_gen(width = 8)
+  ) +
   scale_y_continuous(
-    "Count",
+    "Number of records",
     expand = expansion(add = c(0, 5))
   ) +
   scale_x_discrete(
-    "Scientific name"
+    "Taxon"
   ) +
   theme_classic() +
   theme(
     strip.background = element_blank(),
+    strip.clip = "off",
     axis.text.x = ggtext::element_markdown(angle = 55, hjust = 1),
   )
-ggsave("figs/iNaturalist_records_by_continent_sciName.png", width = 8, dpi = 600)
+ggsave("figs/iNaturalist_records_by_continent_sciName.png", width = 8, height = 3.8, dpi = 600)
 
 # Analysis for North America -----
 df_NoAm <- dplyr::filter(df_grid, continent == "North America")

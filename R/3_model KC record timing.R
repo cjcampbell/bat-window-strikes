@@ -55,6 +55,28 @@ dat_surv |>
 
 
 
+# Search interval -----------------------------------------------------------
+# Days between consecutive surveys within a season (spring = Jan-Jul, autumn =
+# Aug-Dec, within each year); gaps between seasons are excluded. Reported in the
+# Methods: median 3 days, IQR 2-6 days, 18% on consecutive days (n = 177 intervals).
+sd |>
+  dplyr::filter(survey) |>
+  dplyr::mutate(
+    year = year(date),
+    season = dplyr::if_else(month(date) <= 7, "spring", "autumn")
+  ) |>
+  dplyr::arrange(date) |>
+  dplyr::mutate(interval = as.numeric(date - dplyr::lag(date)), .by = c(year, season)) |>
+  dplyr::filter(!is.na(interval)) |>
+  dplyr::summarise(
+    n_intervals      = dplyr::n(),
+    median_interval  = median(interval),
+    q25_interval     = quantile(interval, 0.25),
+    q75_interval     = quantile(interval, 0.75),
+    prop_consecutive = mean(interval == 1)
+  )
+
+
 # Timing models -----------------------------------------------------------
 library(brms)
 
@@ -213,6 +235,12 @@ ggsave(p_re_year, filename = "figs/timing_posterior_year.png", dpi = 600, width 
 # Make combination Plot ------------
 
 # Load plots from script 2 for inclusion in multi-panel figure w/ model results.
+# These tmp/ objects are written by script 2, so run 2_plot and summarize KC records.R
+# before this combination-figure section.
+stopifnot(
+  "tmp/ plot objects not found; run script 2 first" =
+    file.exists("tmp/p_KC_records_barplot.rds") && file.exists("tmp/p_yday_species_list.rds")
+)
 p_KC_records_barplot <- readRDS("tmp/p_KC_records_barplot.rds")
 p_yday_species_list <- readRDS("tmp/p_yday_species_list.rds")
 

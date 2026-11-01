@@ -125,3 +125,20 @@ sd <- full_join(sd1, fullDates) |>
     ) 
 
 write.csv(sd, "data/derived/structured_surveys_schedule.csv", row.names = F)
+
+# Supplemental Tables S1-S2 ------------------------------------------------
+# Written to out/tables/ for the Supporting Information; data/derived/ files above
+# remain the model inputs.
+dir.create("out/tables", showWarnings = FALSE, recursive = TRUE)
+
+# Table S1: dates of semi-structured surveys (survey days only).
+sd |>
+  dplyr::filter(survey) |>
+  dplyr::select(date, yday) |>
+  write.csv("out/tables/table_s1_structured_surveys_schedule.csv", row.names = FALSE)
+
+# Table S2: all bats discovered. on_survey = TRUE for bats found on survey days
+# (the set used in analyses); FALSE for bats found or reported outside surveys.
+df_discovery2 |>
+  dplyr::mutate(on_survey = date %in% sd$date[sd$survey], .after = yday) |>
+  write.csv("out/tables/table_s2_structured_surveys_bats_discovered.csv", row.names = FALSE)
